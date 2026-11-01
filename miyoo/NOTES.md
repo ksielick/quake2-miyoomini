@@ -793,8 +793,25 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - Next: catch them in real play, where the timedemos may not show them (level loads,
     saves, Onion's background tasks): a play log as in tyrquake-miyoo (MIYOO_FRAMES from
     launch.sh while the owner plays, written at exit).
+  - Done in the repo (a1461afb), **not yet on the card**: `launch.sh` sets `MIYOO_FRAMES`
+    to `playlog/frames-<date>.txt` when a file `playlog.on` is in the game's folder;
+    FRAMES_MAX is 216000 (an hour at 60 fps, 2.6 MB). Build: `build/miyoo_play`. The file is
+    written only when the game quits through its menu (atexit); a power-off loses it.
+  - The owner first plays without the log (2026-11-01 ~16:00), then with it. To start the
+    logged play: back up the card's `launch.sh`, `quake2` and `ref_soft.so` to the PC, copy
+    `build/miyoo_play`'s two binaries and the repo `launch.sh`, create `playlog.on`. After
+    it: fetch `playlog/frames-*.txt` and run `frametimes.py --skip 0 --long 40` on it; for
+    each long frame say whether it read from the card or swap (majflt), or lost the CPU
+    (nivcsw), or neither (the game's own work: a level load, a save, a big fight).
 - **Where it stood (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
   play (+50 % / +64 %)**; at timedemo speed 67 / 60.5 fps. Pixel for pixel the same. The
   card's main build is `build/miyoo_s3c`.
   - Still to do: PGO with a new profile, the random system hiccups.
   - The owner's decision: drawing a frame late, to overlap the serial ~7 ms.
+- **Where it stood (2026-11-01 16:00)**: the card runs `build/miyoo_hic` (everything above:
+  OGG thread, 10 kHz filter, getrusage frame log; FRAMES_MAX still 20000 there). Music: the
+  20 GOG tracks in `Games/Quake2/music/` (card only, never in the repo).
+  - Next: the owner's logged play (above), then PGO, cleaning the card's `test_*` folders,
+    rogue/xatrix game.so, Onion integration, a release.
+  - Waiting for the owner: drawing a frame late (+1 frame latency); the TyrQuake sound
+    fixes (limiter, 16-bit resample step, declicker, ramps; the owner hears no problems).
