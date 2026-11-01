@@ -61,6 +61,10 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 						int level, light3_t lightleft, light3_t lightright)
 {
 	int light_masked_right, light_masked_left;
+	/* (Miyoo Mini port: the tables in locals: gcc reloaded the global pointers after every
+	 * texel store, which may alias them. Same lookups.) */
+	const pixel_t *const colormap = vid_colormap;
+	const byte *const c16to8 = d_16to8table;
 
 	light_masked_right = R_GreyscaledLight(lightright);
 	if (light_masked_right != LIGHTMASK)
@@ -79,7 +83,7 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 
 		while (dest < dest_max)
 		{
-			*dest = vid_colormap[*src + light_masked_right];
+			*dest = colormap[*src + light_masked_right];
 
 			dest++;
 			src++;
@@ -101,7 +105,7 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 
 		for (b = (size - 1); b >= 0; b--)
 		{
-			prowdest[b] = vid_colormap[psource[b] + (light & LIGHTMASK)];
+			prowdest[b] = colormap[psource[b] + (light & LIGHTMASK)];
 			light += lightstep;
 		}
 
@@ -111,7 +115,8 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 	// same color light shades
 	{
 		int b, j;
-		light3_t lightstep, light;
+		light3_t lightstep;
+		int l0, l1, l2;
 
 		for(j=0; j<3; j++)
 		{
@@ -121,18 +126,20 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 			lightstep[j] = lighttemp >> level;
 		}
 
-		memcpy(light, lightright, sizeof(light3_t));
+		l0 = lightright[0];
+		l1 = lightright[1];
+		l2 = lightright[2];
 
 		for (b=(size-1); b>=0; b--)
 		{
 			pixel_t pix;
-			int j;
 
 			pix = psource[b];
-			prowdest[b] = R_ApplyLight(pix, light);
+			prowdest[b] = R_ApplyLightTab(pix, l0, l1, l2, colormap, c16to8);
 
-			for(j=0; j<3; j++)
-				light[j] += lightstep[j];
+			l0 += lightstep[0];
+			l1 += lightstep[1];
+			l2 += lightstep[2];
 		}
 	}
 }

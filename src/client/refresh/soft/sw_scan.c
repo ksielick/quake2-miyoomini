@@ -515,9 +515,14 @@ static const int filtering_kernel[2][2][2] = {
 D_DrawSpan
 =============
 */
+/* (Miyoo Mini port: cachewidth comes as an argument, cw. As a global (__thread here) gcc
+ * reloaded it for every pixel, because a store through pdest may alias it.) */
 static pixel_t *
-D_DrawSpan(pixel_t *pdest, const pixel_t *pbase, int s, int t, int sstep, int tstep, int spancount)
+D_DrawSpan(pixel_t *pdest, const pixel_t *pbase, int s, int t, int sstep, int tstep, int spancount,
+	const int cw)
 {
+	const int cachewidth = cw;
+
 	const pixel_t *tdest_max = pdest + spancount;
 
 	// horisontal span (span in same row)
@@ -565,8 +570,10 @@ D_DrawSpanFiltered
 */
 static pixel_t *
 D_DrawSpanFiltered(pixel_t *pdest, pixel_t *pbase, int s, int t, int sstep, int tstep, int spancount,
-	   const espan_t *pspan)
+	   const espan_t *pspan, const int cw)
 {
+	const int cachewidth = cw;	/* (Miyoo Mini port: as in D_DrawSpan) */
+
 	do
 	{
 		int idiths = s;
@@ -615,10 +622,21 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 	spanstep_value = (1 << spanstep_shift);
 
 	pbase = (unsigned char *)cacheblock;
+	/* (Miyoo Mini port: the drawing state in locals, l_*, for the reason given at D_DrawSpan:
+	 * gcc reloaded them, __thread or global, after every pixel store) */
+	const int cw = cachewidth;
+	const int l_bbextents = bbextents, l_bbextentt = bbextentt;
+	const int l_sadjust = sadjust, l_tadjust = tadjust;
+	const float l_d_sdivzstepu = d_sdivzstepu, l_d_tdivzstepu = d_tdivzstepu;
+	const float l_d_sdivzstepv = d_sdivzstepv, l_d_tdivzstepv = d_tdivzstepv;
+	const float l_d_sdivzorigin = d_sdivzorigin, l_d_tdivzorigin = d_tdivzorigin;
+	const qboolean l_fastmoving = fastmoving;
+	pixel_t *const l_d_viewbuffer = d_viewbuffer;
+	const int l_vid_buffer_width = vid_buffer_width;
 
 	texture_filtering = (int)sw_texture_filtering->value;
-	sdivzpow2stepu = d_sdivzstepu * spanstep_value;
-	tdivzpow2stepu = d_tdivzstepu * spanstep_value;
+	sdivzpow2stepu = l_d_sdivzstepu * spanstep_value;
+	tdivzpow2stepu = l_d_tdivzstepu * spanstep_value;
 	zipow2stepu = d_zistepu * spanstep_value;
 
 	do
@@ -632,7 +650,7 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 		int	count, s, t;
 		float	sdivz, tdivz, zi, z, du, dv;
 
-		pdest = d_viewbuffer + (vid_buffer_width * pspan->v) + pspan->u;
+		pdest = l_d_viewbuffer + (l_vid_buffer_width * pspan->v) + pspan->u;
 
 		count = pspan->count;
 
@@ -640,20 +658,20 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 		du = (float)pspan->u;
 		dv = (float)pspan->v;
 
-		sdivz = d_sdivzorigin + dv*d_sdivzstepv + du*d_sdivzstepu;
-		tdivz = d_tdivzorigin + dv*d_tdivzstepv + du*d_tdivzstepu;
+		sdivz = l_d_sdivzorigin + dv*l_d_sdivzstepv + du*l_d_sdivzstepu;
+		tdivz = l_d_tdivzorigin + dv*l_d_tdivzstepv + du*l_d_tdivzstepu;
 		zi = d_ziorigin + dv*d_zistepv + du*d_zistepu;
 		z = (float)SHIFT16XYZ_MULT / zi;	// prescale to 16.16 fixed-point
 
-		s = (int)(sdivz * z) + sadjust;
-		if (s > bbextents)
-			s = bbextents;
+		s = (int)(sdivz * z) + l_sadjust;
+		if (s > l_bbextents)
+			s = l_bbextents;
 		else if (s < 0)
 			s = 0;
 
-		t = (int)(tdivz * z) + tadjust;
-		if (t > bbextentt)
-			t = bbextentt;
+		t = (int)(tdivz * z) + l_tadjust;
+		if (t > l_bbextentt)
+			t = l_bbextentt;
 		else if (t < 0)
 			t = 0;
 
@@ -681,18 +699,18 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 				zi += zipow2stepu;
 				z = (float)SHIFT16XYZ_MULT / zi;	// prescale to 16.16 fixed-point
 
-				snext = (int)(sdivz * z) + sadjust;
-				if (snext > bbextents)
-					snext = bbextents;
+				snext = (int)(sdivz * z) + l_sadjust;
+				if (snext > l_bbextents)
+					snext = l_bbextents;
 				else if (snext < spanstep_value)
 					// prevent round-off error on <0 steps from
 					//  from causing overstepping & running off the
 					//  edge of the texture
 					snext = spanstep_value;
 
-				tnext = (int)(tdivz * z) + tadjust;
-				if (tnext > bbextentt)
-					tnext = bbextentt;
+				tnext = (int)(tdivz * z) + l_tadjust;
+				if (tnext > l_bbextentt)
+					tnext = l_bbextentt;
 				else if (tnext < spanstep_value)
 					// guard against round-off error on <0 steps
 					tnext = spanstep_value;
@@ -707,22 +725,22 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 				// span by division, biasing steps low so we don't run off the
 				// texture
 				spancountminus1 = (float)(spancount - 1);
-				sdivz += d_sdivzstepu * spancountminus1;
-				tdivz += d_tdivzstepu * spancountminus1;
+				sdivz += l_d_sdivzstepu * spancountminus1;
+				tdivz += l_d_tdivzstepu * spancountminus1;
 				zi += d_zistepu * spancountminus1;
 				z = (float)SHIFT16XYZ_MULT / zi;	// prescale to 16.16 fixed-point
-				snext = (int)(sdivz * z) + sadjust;
-				if (snext > bbextents)
-					snext = bbextents;
+				snext = (int)(sdivz * z) + l_sadjust;
+				if (snext > l_bbextents)
+					snext = l_bbextents;
 				else if (snext < spanstep_value)
 					// prevent round-off error on <0 steps from
 					//  from causing overstepping & running off the
 					//  edge of the texture
 					snext = spanstep_value;
 
-				tnext = (int)(tdivz * z) + tadjust;
-				if (tnext > bbextentt)
-					tnext = bbextentt;
+				tnext = (int)(tdivz * z) + l_tadjust;
+				if (tnext > l_bbextentt)
+					tnext = l_bbextentt;
 				else if (tnext < spanstep_value)
 					// guard against round-off error on <0 steps
 					tnext = spanstep_value;
@@ -735,15 +753,15 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 			}
 
 			// Drawing phrase
-			if ((texture_filtering == 0) || fastmoving)
+			if ((texture_filtering == 0) || l_fastmoving)
 			{
 				pdest = D_DrawSpan(pdest, pbase, s, t, sstep, tstep,
-						   spancount);
+						   spancount, cw);
 			}
 			else
 			{
 				pdest = D_DrawSpanFiltered(pdest, pbase, s, t, sstep, tstep,
-						   spancount, pspan);
+						   spancount, pspan, cw);
 			}
 			s = snext;
 			t = tnext;
@@ -813,10 +831,16 @@ D_DrawZSpans (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv
 			const zvalue_t *tdest_max = pdest + count;
 			do
 			{
-				int	step;
 				zvalue_t izi_shifted = izi >> SHIFT16XYZ;
+				/* (Miyoo Mini port: the run's length first, then a plain store loop; the
+				 * same values as Yamagi's loop with its two conditions per store) */
+				int	n = tdest_max - pdest;
 
-				for(step = 0; (step < safe_step) && (pdest < tdest_max); step++)
+				if (n > safe_step)
+				{
+					n = safe_step;
+				}
+				while (n-- > 0)
 				{
 					*pdest++ = izi_shifted;
 				}

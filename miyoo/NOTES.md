@@ -586,6 +586,60 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     sw_threads 0).
   - With `sw_threads 0` the same build gives 38.4 / 33.5 fps: the two threads together
     (2.1-2.4) are **+37 % / +41 %**.
-- **Where it stands (2026-11-01 13:15)**: 38.5 / 33.5 fps (-O2) -> **52.6 / 47.1 fps as in
-  play (+37 % / +41 %)**, every step pixel for pixel the same. Still to do: 3 specialised
-  loops, PGO (redo the profile), the random 60-180 ms system hiccups.
+- **Where it stood (2026-11-01 13:15)**: 38.5 / 33.5 fps (-O2) -> **52.6 / 47.1 fps as in
+  play (+37 % / +41 %)**, every step pixel for pixel the same.
+- **3a The pixel loops' state in registers** (2026-11-01 13:50). The disassembly of the -O3 +
+  LTO build showed gcc reloading globals inside the pixel loops:
+  - In D_DrawSpan's vertical and diagonal loops, `cachewidth` was reloaded for every pixel:
+    three dependent loads, since a `__thread` access goes through the GOT and r9.
+  - R_PolysetDrawSpans8_Opaque reloaded r_zistepx, r_lstepx, the skin steps, skinwidth,
+    vid_colormap, d_16to8table and the IR-goggles flags for every pixel.
+  - The cause: the build has `-fno-strict-aliasing` (Yamagi's), so every store through a
+    `pixel_t *` or a `zvalue_t *` may change any global as far as gcc knows. The two-thread
+    work made it worse, because those globals are `__thread` now.
+  - The fix takes the state into locals once per call, in the same arithmetic and order:
+    - D_DrawSpansPow2: cachewidth is passed to D_DrawSpan / D_DrawSpanFiltered;
+      bbextents, sadjust, the d_*divz* steps, d_viewbuffer and the width are `l_*`.
+    - The five polyset span drawers became two `always_inline` templates,
+      R_PolysetDrawSpansTex (_Opaque, _33, _66) and R_PolysetDrawSpansConst
+      (Constant8_33, _66); errorterm and d_aspancount are written back at the end.
+    - R_PolysetScanLeftEdge_C does the same.
+    - R_DrawSurfaceBlock_Light keeps the tables in locals.
+    - R_ApplyLight's body is now R_ApplyLightTab (light components and table pointers as
+      arguments).
+  - The diagonal span loop went from 11 instructions with 3 loads per pixel to 9, with none.
+  - As in play (VSYNC=1, max fps 60; `build/frames_2026-11-01i/`):
+
+    | | demo1 fps | demo2 fps | demo1 p50 / p90 / p99 ms | demo2 p50 / p90 / p99 ms |
+    |---|---|---|---|---|
+    | A: before (mt3) | 53.6 / 53.6 | 47.5 / 47.6 | 17.9 / 23.5 / 31.2-32.6 | 20.0 / 27.0 / 35.4-38.0 |
+    | B: 3a | **56.4 / 56.3** | **51.9 / 52.2** | 17.0 / 21.3 / 30.5 | 18.2 / 24.3 / 31.7-33.6 |
+
+    **+5 % / +9 %**; shots 25/25 identical.
+  - In that session frame 187 of demo1 took 71 and 77 ms in both rounds of 3a (18.6 ms
+    before).
+    - Its shot (SHOTS=187) is identical to mt3's.
+    - In the next session (`build/frames_2026-11-01j/`) neither build had a long frame
+      there, so it was the system.
+    - So a long frame at the same place in two rounds is not proof enough: run another
+      session.
+- **3b D_DrawZSpans' run loop** (the same session as the repeat of 3a): with a z step that
+  stays below one unit over several pixels, Yamagi's loop tested two conditions per store
+  (9 instructions). It now takes the run's length first and then does plain stores, which gcc
+  vectorizes (4 z values per `vst1`). The values are the same; shots 25/25 identical.
+  - A B C A B C as in play:
+
+    | | demo1 fps | demo2 fps |
+    |---|---|---|
+    | A: 3a | 55.3 / 56.5 | 52.1 / 52.2 |
+    | B: 3b | 56.8 / 56.1 | 52.0 / 52.3 |
+    | C: mt3 | 53.3 / 53.2 | 47.4 / 47.1 |
+
+  - The 3b loop is within the noise, but kept: it is simpler and exact. 3a is confirmed:
+    +5-6 % / +10 % over mt3.
+  - The lesson for the other ports is in miyoo.md: under `-fno-strict-aliasing` keep loop
+    state in locals.
+- **Where it stands (2026-11-01 14:05)**: 38.5 / 33.5 fps (-O2) -> **56.5 / 52.2 fps as in
+  play (+47 % / +56 %)**, pixel for pixel the same. The card's main build is
+  `build/miyoo_s3b`. Still to do: TyrQuake's skin addressing in the model spans (pskin +
+  t * skinwidth), PGO (redo the profile), the random system hiccups.

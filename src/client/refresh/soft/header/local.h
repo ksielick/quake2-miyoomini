@@ -612,26 +612,31 @@ qboolean R_ImageHasFreeSpace(void);
  * every texel of the surface cache and every pixel of the models, and a call into another
  * file can't be inlined: ~12 % of a frame on the Cortex-A7.)
  */
+/* (Miyoo Mini port: the body as R_ApplyLightTab, with the light components and the two table
+ * pointers as arguments, so that a pixel loop can keep them in registers: a store through a
+ * pixel_t pointer may alias any global, so gcc reloads vid_colormap and d_16to8table after
+ * each one. Same arithmetic.) */
 static inline pixel_t
-R_ApplyLight(pixel_t pix, const light3_t light)
+R_ApplyLightTab(pixel_t pix, int l0, int l1, int l2, const pixel_t *colormap,
+	const byte *c16to8)
 {
 	light3_t light_masked;
 	pixel_t i_r, i_g, i_b;
 	byte b_r, b_g, b_b;
 	int i_c;
 
-	light_masked[0] = light[0] & LIGHTMASK;
-	light_masked[1] = light[1] & LIGHTMASK;
-	light_masked[2] = light[2] & LIGHTMASK;
+	light_masked[0] = l0 & LIGHTMASK;
+	light_masked[1] = l1 & LIGHTMASK;
+	light_masked[2] = l2 & LIGHTMASK;
 
 	/* same light or colorlight == 0 */
 	if (light_masked[0] == light_masked[1] && light_masked[0] == light_masked[2])
-		return vid_colormap[pix + light_masked[0]];
+		return colormap[pix + light_masked[0]];
 
 	/* get index of color component of each component */
-	i_r = vid_colormap[light_masked[0] + pix];
-	i_g = vid_colormap[light_masked[1] + pix];
-	i_b = vid_colormap[light_masked[2] + pix];
+	i_r = colormap[light_masked[0] + pix];
+	i_g = colormap[light_masked[1] + pix];
+	i_b = colormap[light_masked[2] + pix];
 
 	/* get color component for each component */
 	b_r = d_8to24table[i_r * 4 + 0];
@@ -645,7 +650,13 @@ R_ApplyLight(pixel_t pix, const light3_t light)
 
 	i_c = b_r | ( b_g << 5 ) | ( b_b << 11 );
 
-	return d_16to8table[i_c & 0xFFFF];
+	return c16to8[i_c & 0xFFFF];
+}
+
+static inline pixel_t
+R_ApplyLight(pixel_t pix, const light3_t light)
+{
+	return R_ApplyLightTab(pix, light[0], light[1], light[2], vid_colormap, d_16to8table);
 }
 void	R_Convert32To8bit(const unsigned char* pic_in, pixel_t* pic_out, size_t size, qboolean transparent);
 

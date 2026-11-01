@@ -224,63 +224,101 @@ R_PolysetScanLeftEdge_C
 static void
 R_PolysetScanLeftEdge_C(int height, pixel_t *d_ptex, int u, int v)
 {
+	/* (Miyoo Mini port: the scan state in locals, written back at the end. The stores into the
+	 * span packages may alias every one of these __thread variables, so gcc reloaded and
+	 * stored them for every row. The same steps in the same order: R_PushEdgesSpan, then the
+	 * extra or the base step.) */
+	spanpackage_t	*pkg = d_pedgespanpackage;
+	int		aspancount = d_aspancount, err = errorterm;
+	int		sfrac = d_sfrac, tfrac = d_tfrac;
+	int		l0 = d_light[0], l1 = d_light[1], l2 = d_light[2];
+	zvalue_t	zi = d_zi;
+	const int	basestep = ubasestep, errup = erroradjustup, errdown = erroradjustdown;
+	const int	skinwidth = r_affinetridesc.skinwidth;
+	const int	ptexextra = d_ptexextrastep, sfracextra = d_sfracextrastep;
+	const int	tfracextra = d_tfracextrastep;
+	const int	ptexbase = d_ptexbasestep, sfracbase = d_sfracbasestep;
+	const int	tfracbase = d_tfracbasestep;
+	const int	lextra0 = d_lightextrastep[0], lextra1 = d_lightextrastep[1];
+	const int	lextra2 = d_lightextrastep[2];
+	const int	lbase0 = d_lightbasestep[0], lbase1 = d_lightbasestep[1];
+	const int	lbase2 = d_lightbasestep[2];
+	const zvalue_t	ziextra = d_ziextrastep, zibase = d_zibasestep;
+
 	do
 	{
-		R_PushEdgesSpan(u, v, d_aspancount,
-				d_ptex, d_sfrac, d_tfrac, d_light, d_zi);
+		pkg->u = u;
+		pkg->v = v;
+		pkg->count = aspancount;
+		pkg->ptex = d_ptex;
+		pkg->sfrac = sfrac;
+		pkg->tfrac = tfrac;
+		pkg->light[0] = l0;
+		pkg->light[1] = l1;
+		pkg->light[2] = l2;
+		pkg->zi = zi;
+		pkg++;
 
 		v ++;
-		u += ubasestep;
-		d_aspancount += ubasestep;
+		u += basestep;
+		aspancount += basestep;
 
-		errorterm += erroradjustup;
-		if (errorterm >= 0)
+		err += errup;
+		if (err >= 0)
 		{
-			int i;
-
 			// addtional step for compensate error
 			u ++;
-			d_aspancount ++;
+			aspancount ++;
 
-			d_ptex += d_ptexextrastep;
-			d_sfrac += d_sfracextrastep;
-			d_ptex += d_sfrac >> SHIFT16XYZ;
+			d_ptex += ptexextra;
+			sfrac += sfracextra;
+			d_ptex += sfrac >> SHIFT16XYZ;
 
-			d_sfrac &= 0xFFFF;
-			d_tfrac += d_tfracextrastep;
-			if (d_tfrac & 0x10000)
+			sfrac &= 0xFFFF;
+			tfrac += tfracextra;
+			if (tfrac & 0x10000)
 			{
-				d_ptex += r_affinetridesc.skinwidth;
-				d_tfrac &= 0xFFFF;
+				d_ptex += skinwidth;
+				tfrac &= 0xFFFF;
 			}
 
-			for(i=0; i<3; i++)
-				d_light[i] += d_lightextrastep[i];
+			l0 += lextra0;
+			l1 += lextra1;
+			l2 += lextra2;
 
-			d_zi += d_ziextrastep;
-			errorterm -= erroradjustdown;
+			zi += ziextra;
+			err -= errdown;
 		}
 		else
 		{
-			int i;
-
-			d_ptex += d_ptexbasestep;
-			d_sfrac += d_sfracbasestep;
-			d_ptex += d_sfrac >> SHIFT16XYZ;
-			d_sfrac &= 0xFFFF;
-			d_tfrac += d_tfracbasestep;
-			if (d_tfrac & 0x10000)
+			d_ptex += ptexbase;
+			sfrac += sfracbase;
+			d_ptex += sfrac >> SHIFT16XYZ;
+			sfrac &= 0xFFFF;
+			tfrac += tfracbase;
+			if (tfrac & 0x10000)
 			{
-				d_ptex += r_affinetridesc.skinwidth;
-				d_tfrac &= 0xFFFF;
+				d_ptex += skinwidth;
+				tfrac &= 0xFFFF;
 			}
 
-			for(i=0; i<3; i++)
-				d_light[i] += d_lightbasestep[i];
+			l0 += lbase0;
+			l1 += lbase1;
+			l2 += lbase2;
 
-			d_zi += d_zibasestep;
+			zi += zibase;
 		}
 	} while (--height);
+
+	d_pedgespanpackage = pkg;
+	d_aspancount = aspancount;
+	errorterm = err;
+	d_sfrac = sfrac;
+	d_tfrac = tfrac;
+	d_light[0] = l0;
+	d_light[1] = l1;
+	d_light[2] = l2;
+	d_zi = zi;
 }
 
 /*
@@ -456,344 +494,226 @@ R_PolysetCalcGradients (int skinwidth)
 R_PolysetDrawSpans8
 ================
 */
-void
-R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage)
+/*
+ * (Miyoo Mini port: the span drawers as two templates. A store through the pixel or the z
+ * pointer (char / int) may alias any global, so gcc reloaded every step, table pointer and the
+ * span state (errorterm, d_aspancount: __thread here) for every pixel. The templates take them
+ * into locals once per call and write the span state back at the end; the arithmetic, the
+ * order and the pixels are those of Yamagi's R_PolysetDrawSpans8_33 / _66 / _Opaque and
+ * R_PolysetDrawSpansConstant8_33 / _66.)
+ */
+enum { SPANS_OPAQUE, SPANS_33, SPANS_66 };
+
+static inline __attribute__((always_inline)) void
+R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage,
+	const int mode)
 {
-	pixel_t		*lpdest;
-	pixel_t		*lptex;
-	int		lsfrac, ltfrac;
-	light3_t	llight;
-	zvalue_t	lzi;
-	zvalue_t	*lpz;
+	const zvalue_t	zistepx = r_zistepx;
+	const int	lstep0 = r_lstepx[0], lstep1 = r_lstepx[1], lstep2 = r_lstepx[2];
+	const int	ststepxwhole = a_ststepxwhole;
+	const int	sstepxfrac = a_sstepxfrac, tstepxfrac = a_tstepxfrac;
+	const int	skinwidth = r_affinetridesc.skinwidth;
+	const int	errup = erroradjustup, errdown = erroradjustdown, basestep = ubasestep;
+	const int	width = vid_buffer_width;
+	pixel_t *const	viewbuffer = d_viewbuffer;
+	zvalue_t *const	zbuffer = d_pzbuffer;
+	const pixel_t *const colormap = vid_colormap;
+	const byte *const c16to8 = d_16to8table;
+	const pixel_t *const alphamap = vid_alphamap;
+	const qboolean	ir = mode == SPANS_OPAQUE &&
+		(r_newrefdef.rdflags & RDF_IRGOGGLES) && (currententity->flags & RF_IR_VISIBLE);
+	int	aspancount = d_aspancount, err = errorterm;
 
 	do
 	{
 		int lcount;
 
-		lcount = d_aspancount - pspanpackage->count;
+		lcount = aspancount - pspanpackage->count;
+		err += errup;
+		aspancount += basestep;
 
-		errorterm += erroradjustup;
-		d_aspancount += ubasestep;
-
-		if (errorterm >= 0)
+		if (err >= 0)
 		{
 			// addtional step for compensate error
-			d_aspancount ++;
-			errorterm -= erroradjustdown;
+			aspancount ++;
+			err -= errdown;
 		}
 
 		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
-			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
-
-			lpdest = d_viewbuffer + pos_shift;
-			lpz = d_pzbuffer + pos_shift;
-			lptex = pspanpackage->ptex;
-			lsfrac = pspanpackage->sfrac;
-			ltfrac = pspanpackage->tfrac;
-			memcpy(llight, pspanpackage->light, sizeof(light3_t));
-			lzi = pspanpackage->zi;
+			const int	pos_shift = (pspanpackage->v * width) + pspanpackage->u;
+			pixel_t		*lpdest = viewbuffer + pos_shift;
+			zvalue_t	*lpz = zbuffer + pos_shift;
+			const pixel_t	*lptex = pspanpackage->ptex;
+			int		lsfrac = pspanpackage->sfrac;
+			int		ltfrac = pspanpackage->tfrac;
+			int		l0 = pspanpackage->light[0];
+			int		l1 = pspanpackage->light[1];
+			int		l2 = pspanpackage->light[2];
+			zvalue_t	lzi = pspanpackage->zi;
+			qboolean	zdamaged = false;
 
 			do
 			{
-				int i;
-
 				if ((lzi >> SHIFT16XYZ) >= *lpz)
 				{
-					int temp = R_ApplyLight(*lptex, llight);
+					if (mode == SPANS_OPAQUE)
+					{
+						if (ir)
+							*lpdest = colormap[irtable[*lptex]];
+						else
+							*lpdest = R_ApplyLightTab(*lptex, l0, l1, l2, colormap, c16to8);
+					}
+					else
+					{
+						int temp = R_ApplyLightTab(*lptex, l0, l1, l2, colormap, c16to8);
 
-					*lpdest = vid_alphamap[temp + *lpdest*256];
+						if (mode == SPANS_33)
+							*lpdest = alphamap[temp + *lpdest*256];
+						else
+							*lpdest = alphamap[temp*256 + *lpdest];
+					}
+
+					if (mode != SPANS_33)
+					{
+						*lpz = lzi >> SHIFT16XYZ;
+						zdamaged = true;
+					}
 				}
 				lpdest++;
-				lzi += r_zistepx;
+				lzi += zistepx;
 				lpz++;
-				for(i=0; i<3; i++)
-					llight[i] += r_lstepx[i];
-				lptex += a_ststepxwhole;
-				lsfrac += a_sstepxfrac;
+				l0 += lstep0;
+				l1 += lstep1;
+				l2 += lstep2;
+				lptex += ststepxwhole;
+				lsfrac += sstepxfrac;
 				lptex += lsfrac >> SHIFT16XYZ;
 				lsfrac &= 0xFFFF;
-				ltfrac += a_tstepxfrac;
+				ltfrac += tstepxfrac;
 				if (ltfrac & 0x10000)
 				{
-					lptex += r_affinetridesc.skinwidth;
+					lptex += skinwidth;
 					ltfrac &= 0xFFFF;
 				}
 			} while (--lcount);
+
+			if (zdamaged)
+			{
+				// damaged only current line
+				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
+				VID_DamageZBuffer(
+					pspanpackage->u + aspancount - pspanpackage->count,
+					pspanpackage->v);
+			}
 		}
 
 		pspanpackage++;
 	} while (pspanpackage->count != INT_MIN);
+
+	d_aspancount = aspancount;
+	errorterm = err;
+}
+
+static inline __attribute__((always_inline)) void
+R_PolysetDrawSpansConst(spanpackage_t *pspanpackage, const int mode)
+{
+	const zvalue_t	zistepx = r_zistepx;
+	const int	errup = erroradjustup, errdown = erroradjustdown, basestep = ubasestep;
+	const int	width = vid_buffer_width;
+	pixel_t *const	viewbuffer = d_viewbuffer;
+	zvalue_t *const	zbuffer = d_pzbuffer;
+	const pixel_t *const alphamap = vid_alphamap;
+	const int	blendcolor = r_aliasblendcolor;
+	int	aspancount = d_aspancount, err = errorterm;
+
+	do
+	{
+		int lcount;
+
+		lcount = aspancount - pspanpackage->count;
+		err += errup;
+		aspancount += basestep;
+
+		if (err >= 0)
+		{
+			// addtional step for compensate error
+			aspancount ++;
+			err -= errdown;
+		}
+
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
+		{
+			const int	pos_shift = (pspanpackage->v * width) + pspanpackage->u;
+			pixel_t		*lpdest = viewbuffer + pos_shift;
+			zvalue_t	*lpz = zbuffer + pos_shift;
+			zvalue_t	lzi = pspanpackage->zi;
+			qboolean	zdamaged = false;
+
+			do
+			{
+				if ((lzi >> SHIFT16XYZ) >= *lpz)
+				{
+					if (mode == SPANS_33)
+					{
+						*lpdest = alphamap[blendcolor + *lpdest*256];
+					}
+					else
+					{
+						*lpdest = alphamap[blendcolor*256 + *lpdest];
+						zdamaged = true;
+					}
+				}
+				lpdest++;
+				lzi += zistepx;
+				lpz++;
+			} while (--lcount);
+
+			if (zdamaged)
+			{
+				// damaged only current line
+				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
+				VID_DamageZBuffer(
+					pspanpackage->u + aspancount - pspanpackage->count,
+					pspanpackage->v);
+			}
+		}
+
+		pspanpackage++;
+	} while (pspanpackage->count != INT_MIN);
+
+	d_aspancount = aspancount;
+	errorterm = err;
+}
+
+void
+R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage)
+{
+	R_PolysetDrawSpansTex(currententity, pspanpackage, SPANS_33);
 }
 
 void
 R_PolysetDrawSpansConstant8_33(const entity_t *currententity, spanpackage_t *pspanpackage)
 {
-	pixel_t		*lpdest;
-	int		lzi;
-	zvalue_t	*lpz;
-
-	do
-	{
-		int lcount;
-
-		lcount = d_aspancount - pspanpackage->count;
-
-		errorterm += erroradjustup;
-		d_aspancount += ubasestep;
-
-		if (errorterm >= 0)
-		{
-			// addtional step for compensate error
-			d_aspancount ++;
-			errorterm -= erroradjustdown;
-		}
-
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
-		{
-			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
-
-			lpdest = d_viewbuffer + pos_shift;
-			lpz = d_pzbuffer + pos_shift;
-			lzi = pspanpackage->zi;
-
-			do
-			{
-				if ((lzi >> SHIFT16XYZ) >= *lpz)
-				{
-					*lpdest = vid_alphamap[r_aliasblendcolor + *lpdest*256];
-				}
-				lpdest++;
-				lzi += r_zistepx;
-				lpz++;
-			} while (--lcount);
-		}
-
-		pspanpackage++;
-	} while (pspanpackage->count != INT_MIN);
+	R_PolysetDrawSpansConst(pspanpackage, SPANS_33);
 }
 
 void
 R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackage)
 {
-	pixel_t		*lpdest;
-	pixel_t		*lptex;
-	int		lsfrac, ltfrac;
-	light3_t	llight;
-	zvalue_t	lzi;
-	zvalue_t	*lpz;
-
-	do
-	{
-		int lcount;
-
-		lcount = d_aspancount - pspanpackage->count;
-
-		errorterm += erroradjustup;
-		d_aspancount += ubasestep;
-
-		if (errorterm >= 0)
-		{
-			// addtional step for compensate error
-			d_aspancount ++;
-			errorterm -= erroradjustdown;
-		}
-
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
-		{
-			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
-			qboolean	zdamaged = false;
-
-			lpdest = d_viewbuffer + pos_shift;
-			lpz = d_pzbuffer + pos_shift;
-			lptex = pspanpackage->ptex;
-			lsfrac = pspanpackage->sfrac;
-			ltfrac = pspanpackage->tfrac;
-			memcpy(llight, pspanpackage->light, sizeof(light3_t));
-			lzi = pspanpackage->zi;
-
-			do
-			{
-				int i;
-
-				if ((lzi >> SHIFT16XYZ) >= *lpz)
-				{
-					int temp = R_ApplyLight(*lptex, llight);
-
-					*lpdest = vid_alphamap[temp*256 + *lpdest];
-					*lpz = lzi >> SHIFT16XYZ;
-					zdamaged = true;
-				}
-				lpdest++;
-				lzi += r_zistepx;
-				lpz++;
-				for(i=0; i<3; i++)
-					llight[i] += r_lstepx[i];
-				lptex += a_ststepxwhole;
-				lsfrac += a_sstepxfrac;
-				lptex += lsfrac >> SHIFT16XYZ;
-				lsfrac &= 0xFFFF;
-				ltfrac += a_tstepxfrac;
-				if (ltfrac & 0x10000)
-				{
-					lptex += r_affinetridesc.skinwidth;
-					ltfrac &= 0xFFFF;
-				}
-			} while (--lcount);
-
-			if (zdamaged)
-			{
-				// damaged only current line
-				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
-				VID_DamageZBuffer(
-					pspanpackage->u + d_aspancount - pspanpackage->count,
-					pspanpackage->v);
-			}
-		}
-
-		pspanpackage++;
-	} while (pspanpackage->count != INT_MIN);
+	R_PolysetDrawSpansTex(currententity, pspanpackage, SPANS_66);
 }
 
 void
 R_PolysetDrawSpansConstant8_66(const entity_t *currententity, spanpackage_t *pspanpackage)
 {
-	pixel_t		*lpdest;
-	zvalue_t	lzi;
-	zvalue_t	*lpz;
-
-	do
-	{
-		int lcount;
-
-		lcount = d_aspancount - pspanpackage->count;
-
-		errorterm += erroradjustup;
-		d_aspancount += ubasestep;
-
-		if (errorterm >= 0)
-		{
-			// addtional step for compensate error
-			d_aspancount ++;
-			errorterm -= erroradjustdown;
-		}
-
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
-		{
-			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
-			qboolean	zdamaged = false;
-
-			lpdest = d_viewbuffer + pos_shift;
-			lpz = d_pzbuffer + pos_shift;
-			lzi = pspanpackage->zi;
-
-			do
-			{
-				if ((lzi >> SHIFT16XYZ) >= *lpz)
-				{
-					*lpdest = vid_alphamap[r_aliasblendcolor*256 + *lpdest];
-					zdamaged = true;
-				}
-				lpdest++;
-				lzi += r_zistepx;
-				lpz++;
-			} while (--lcount);
-
-			if (zdamaged)
-			{
-				// damaged only current line
-				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
-				VID_DamageZBuffer(
-					pspanpackage->u + d_aspancount - pspanpackage->count,
-					pspanpackage->v);
-			}
-		}
-
-		pspanpackage++;
-	} while (pspanpackage->count != INT_MIN);
+	R_PolysetDrawSpansConst(pspanpackage, SPANS_66);
 }
 
 void
 R_PolysetDrawSpans8_Opaque (const entity_t *currententity, spanpackage_t *pspanpackage)
 {
-	do
-	{
-		int lcount;
-
-		lcount = d_aspancount - pspanpackage->count;
-		errorterm += erroradjustup;
-		d_aspancount += ubasestep;
-
-		if (errorterm >= 0)
-		{
-			// addtional step for compensate error
-			d_aspancount ++;
-			errorterm -= erroradjustdown;
-		}
-
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
-		{
-			int		lsfrac, ltfrac;
-			pixel_t		*lpdest;
-			pixel_t		*lptex;
-			light3_t	llight;
-			zvalue_t	lzi;
-			zvalue_t	*lpz;
-			int		pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
-			qboolean	zdamaged = false;
-
-			lpdest = d_viewbuffer + pos_shift;
-			lpz = d_pzbuffer + pos_shift;
-
-			lptex = pspanpackage->ptex;
-			lsfrac = pspanpackage->sfrac;
-			ltfrac = pspanpackage->tfrac;
-			memcpy(llight, pspanpackage->light, sizeof(light3_t));
-			lzi = pspanpackage->zi;
-
-			do
-			{
-				int i;
-
-				if ((lzi >> SHIFT16XYZ) >= *lpz)
-				{
-					if(r_newrefdef.rdflags & RDF_IRGOGGLES && currententity->flags & RF_IR_VISIBLE)
-						*lpdest = vid_colormap[irtable[*lptex]];
-					else
-						*lpdest = R_ApplyLight(*lptex, llight);
-
-					*lpz = lzi >> SHIFT16XYZ;
-					zdamaged = true;
-				}
-				lpdest++;
-				lzi += r_zistepx;
-				lpz++;
-				for(i=0; i<3; i++)
-					llight[i] += r_lstepx[i];
-				lptex += a_ststepxwhole;
-				lsfrac += a_sstepxfrac;
-				lptex += lsfrac >> SHIFT16XYZ;
-				lsfrac &= 0xFFFF;
-				ltfrac += a_tstepxfrac;
-				if (ltfrac & 0x10000)
-				{
-					lptex += r_affinetridesc.skinwidth;
-					ltfrac &= 0xFFFF;
-				}
-			} while (--lcount);
-
-			if (zdamaged)
-			{
-				// damaged only current line
-				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
-				VID_DamageZBuffer(
-					pspanpackage->u + d_aspancount - pspanpackage->count,
-					pspanpackage->v);
-			}
-		}
-
-		pspanpackage++;
-	} while (pspanpackage->count != INT_MIN);
+	R_PolysetDrawSpansTex(currententity, pspanpackage, SPANS_OPAQUE);
 }
 
 static void
