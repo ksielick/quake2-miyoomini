@@ -594,7 +594,48 @@ image_t	*R_FindImage(const char *name, imagetype_t type);
 byte	*Get_BestImageSize(const image_t *image, int *req_width, int *req_height);
 void	R_FreeUnusedImages(void);
 qboolean R_ImageHasFreeSpace(void);
-pixel_t	R_ApplyLight(pixel_t pix, const light3_t light);
+/*
+ * Apply color light to texture pixel
+ *
+ * (Miyoo Mini port: moved here from sw_image.c as static inline, unchanged. It is called for
+ * every texel of the surface cache and every pixel of the models, and a call into another
+ * file can't be inlined: ~12 % of a frame on the Cortex-A7.)
+ */
+static inline pixel_t
+R_ApplyLight(pixel_t pix, const light3_t light)
+{
+	light3_t light_masked;
+	pixel_t i_r, i_g, i_b;
+	byte b_r, b_g, b_b;
+	int i_c;
+
+	light_masked[0] = light[0] & LIGHTMASK;
+	light_masked[1] = light[1] & LIGHTMASK;
+	light_masked[2] = light[2] & LIGHTMASK;
+
+	/* same light or colorlight == 0 */
+	if (light_masked[0] == light_masked[1] && light_masked[0] == light_masked[2])
+		return vid_colormap[pix + light_masked[0]];
+
+	/* get index of color component of each component */
+	i_r = vid_colormap[light_masked[0] + pix];
+	i_g = vid_colormap[light_masked[1] + pix];
+	i_b = vid_colormap[light_masked[2] + pix];
+
+	/* get color component for each component */
+	b_r = d_8to24table[i_r * 4 + 0];
+	b_g = d_8to24table[i_g * 4 + 1];
+	b_b = d_8to24table[i_b * 4 + 2];
+
+	/* convert back to indexed color */
+	b_r = ( b_r >> 3 ) & 31;
+	b_g = ( b_g >> 2 ) & 63;
+	b_b = ( b_b >> 3 ) & 31;
+
+	i_c = b_r | ( b_g << 5 ) | ( b_b << 11 );
+
+	return d_16to8table[i_c & 0xFFFF];
+}
 void	R_Convert32To8bit(const unsigned char* pic_in, pixel_t* pic_out, size_t size, qboolean transparent);
 
 void R_InitSkyBox(model_t *loadmodel);

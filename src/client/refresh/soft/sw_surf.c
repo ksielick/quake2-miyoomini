@@ -86,6 +86,26 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 		return;
 	}
 
+	/* (Miyoo Mini port) the same grey light in all three components at both ends, to the last
+	   bit: the steps are equal and the components stay equal along the row, so R_ApplyLight
+	   below would give vid_colormap[pix + (light & LIGHTMASK)] for every texel: the same
+	   pixels, without the per-texel work (as the original's surface block loop) */
+	if (lightleft[0] == lightleft[1] && lightleft[0] == lightleft[2] &&
+		lightright[0] == lightright[1] && lightright[0] == lightright[2])
+	{
+		const int lightstep = (lightleft[0] - lightright[0]) >> level;
+		int light = lightright[0];
+		int b;
+
+		for (b = (size - 1); b >= 0; b--)
+		{
+			prowdest[b] = vid_colormap[psource[b] + (light & LIGHTMASK)];
+			light += lightstep;
+		}
+
+		return;
+	}
+
 	// same color light shades
 	{
 		int b, j;

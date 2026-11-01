@@ -90,7 +90,7 @@ compile client "" $CLIENT
 compile ref_soft "-fPIC" $REFSOFT
 compile game "-fPIC" $GAME
 
-LIBS="-Wl,--wrap=stat -lm -Wl,--no-as-needed -l:libdl.so.2 -l:libpthread.so.0"
+LIBS="-Wl,--wrap=stat -lm -Wl,--no-as-needed -l:libdl.so.2 -l:libpthread.so.0 -l:librt.so.1"
 echo "  LD quake2"
 "$CC" -no-pie -nostartfiles -rdynamic -static-libgcc -o "$OUT/quake2" miyoo/build/start.S \
 	-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard "$OUT"/obj/client/*.o $LIBS

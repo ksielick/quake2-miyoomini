@@ -174,6 +174,22 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
     renderer itself.
   - Not done (small gain, ~1.3 ms at most): the blit on the pan thread. It needs two textures,
     and Yamagi may copy only changed rows into the texture (`sw_partialrefresh`).
+- **2026-11-01, step 5 begins: profile, then R_ApplyLight.** Sampling profiler from RR2
+  (`miyoo/platform/miyoo_prof.c`, `MIYOO_PROF=file,first,count`, bench.sh `PROF=50,550`; added
+  "# map" lines for the code in shared libraries; `timer_*` pinned to GLIBC_2.4, `librt.so.1`
+  linked) and `miyoo/tools/prof_map.py` (maps addresses in quake2, ref_soft.so and game.so).
+  - demo1, frames 50-599, all on the game thread (~29 ms a frame): D_DrawSpansPow2 22 %,
+    D_CacheSurface 13 %, R_ApplyLight 12 %, R_PolysetDrawSpans8_Opaque 12 %, RE_EndFrame 10 %
+    (the 8 bpp -> 32 bpp conversion), D_DrawZSpans 6 %, R_ProcessLeftEdge 3 %,
+    VID_DamageZBuffer 3 %.
+  - R_ApplyLight (Yamagi's colour light; `sw_colorlight` is 0 by default) is called per texel
+    of the surface cache and per pixel of the models, from another file, so never inlined
+    (Yamagi's own comment: "TODO: -22% fps lost"). Moved to `header/local.h` as static inline,
+    unchanged, and `R_DrawSurfaceBlock_Light` (sw_surf.c) got the original's loop when all
+    three light components are exactly equal at both ends of the row (then R_ApplyLight would
+    give `vid_colormap[pix + (light & LIGHTMASK)]` for every texel).
+  - demo1 **38.0 fps** (was 33.7), demo2 **33.7 fps** (was 29.9): +13 %. Shots: 25/25
+    identical to the reference.
 - Game data for tests on the PC: `G:\Emulacja\Quake2\` (outside the repo, never commit it):
   the owner's GOG "Quake II - Quad Damage" 2.0.0.3, extracted with innoextract
   (`G:\Emulacja\dethrace-miyoo\deps\innoextract`, `-I baseq2 -I music -I rogue -I xatrix

@@ -14,6 +14,8 @@
 # SHOTS=N: every Nth frame saved to <game>/shots/<SET>/<demo>/NNNNN.argb (SET default "new"),
 # for miyoo/tools/shots_compare.py on the PC (fetch them over SMB: Roms\PORTS\Games\Quake2\shots).
 # The shots cost time: such runs are not timings.
+# PROF=first,count: a profile of those frames of each demo (miyoo/platform/miyoo_prof.c) to
+# <game>/prof_<demo>.txt; map it on the PC with miyoo/tools/prof_map.py.
 GAME=/mnt/SDCARD/Roms/PORTS/Games/Quake2
 OUT=/tmp/q2bench.txt
 DEMOS=${*:-demo1 demo2}
@@ -35,6 +37,7 @@ for d in $DEMOS; do
 	# a watchdog: a run that hangs is stopped after 300 s
 	( sleep 300; killall -9 quake2 2>/dev/null ) &
 	W=$!
+	[ -n "$PROF" ] && export MIYOO_PROF="$GAME/prof_$d.txt,$PROF"
 	if [ -n "$SHOTS" ]; then
 		export MIYOO_SHOTS="$SHOTS" MIYOO_SHOTS_DIR="$GAME/shots/${SET:-new}/$d"
 		rm -rf "$MIYOO_SHOTS_DIR"

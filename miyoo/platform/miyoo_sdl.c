@@ -446,8 +446,11 @@ static void SaveShot(const SDL_Texture *t)
 	}
 }
 
+void MiyooProf_Frame(void);	/* miyoo_prof.c (MIYOO_PROF) */
+
 void SDL_RenderPresent(SDL_Renderer *renderer)
 {
+	MiyooProf_Frame();
 	if (!s_shown)
 		return;
 	SaveShot(s_shown);
