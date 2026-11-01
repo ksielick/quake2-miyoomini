@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -506,9 +507,13 @@ static void SaveShot(const SDL_Texture *t, unsigned k)
 
 /* Frame times for stutter checks (miyoo/tools/bench.sh FRAMES=1, tools-miyoo analysis/frametimes.py):
  * MIYOO_FRAMES=file writes the time from each present to the next, in microseconds, one per
- * line, kept in memory and written at exit (no file writes while it runs). */
+ * line, kept in memory and written at exit (no file writes while it runs). After the time,
+ * the process's getrusage counts during that frame (for the random long frames): major page
+ * faults (read from the card: swap or a file), minor faults, voluntary and involuntary
+ * context switches (involuntary = another task took the CPU). */
 #define FRAMES_MAX 20000
-static uint32_t *s_frameUs;
+typedef struct { uint32_t us; uint16_t majflt, minflt, nvcsw, nivcsw; } frame_rec_t;
+static frame_rec_t *s_frames;
 static int s_frameCount;
 static const char *s_framesPath;
 
@@ -520,25 +525,54 @@ static void SaveFrames(void)
 	if (!f)
 		return;
 	for (i = 0; i < s_frameCount; i++)
-		fprintf(f, "%u\n", (unsigned)s_frameUs[i]);
+		fprintf(f, "%u %u %u %u %u\n", (unsigned)s_frames[i].us, s_frames[i].majflt,
+			s_frames[i].minflt, s_frames[i].nvcsw, s_frames[i].nivcsw);
 	fclose(f);
+}
+
+static uint16_t Delta16(long now, long *last)
+{
+	long d = now - *last;
+
+	*last = now;
+	return (uint16_t)(d > 65535 ? 65535 : (d < 0 ? 0 : d));
 }
 
 static void FrameTime(void)
 {
 	static int init;
 	static uint64_t last;
+	static long lmaj, lmin, lv, liv;
 	const uint64_t now = NowNs();
+	struct rusage ru;
 
 	if (!init)
 	{
 		init = 1;
 		s_framesPath = getenv("MIYOO_FRAMES");
-		if (s_framesPath && (s_frameUs = malloc(FRAMES_MAX * sizeof(*s_frameUs))))
+		if (s_framesPath && (s_frames = malloc(FRAMES_MAX * sizeof(*s_frames))))
 			atexit(SaveFrames);
 	}
-	if (s_frameUs && last && s_frameCount < FRAMES_MAX)
-		s_frameUs[s_frameCount++] = (uint32_t)((now - last) / 1000);
+	if (!s_frames)
+		return;
+	getrusage(RUSAGE_SELF, &ru);
+	if (last && s_frameCount < FRAMES_MAX)
+	{
+		frame_rec_t *r = &s_frames[s_frameCount++];
+
+		r->us = (uint32_t)((now - last) / 1000);
+		r->majflt = Delta16(ru.ru_majflt, &lmaj);
+		r->minflt = Delta16(ru.ru_minflt, &lmin);
+		r->nvcsw = Delta16(ru.ru_nvcsw, &lv);
+		r->nivcsw = Delta16(ru.ru_nivcsw, &liv);
+	}
+	else
+	{
+		lmaj = ru.ru_majflt;
+		lmin = ru.ru_minflt;
+		lv = ru.ru_nvcsw;
+		liv = ru.ru_nivcsw;
+	}
 	last = now;
 }
 

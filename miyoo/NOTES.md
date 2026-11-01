@@ -772,6 +772,27 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - Options menu "sound filter": 1997 high (10 kHz) / 1997 low (5 kHz) / off.
   - Cost, as in play with music, A B x3 in one build: off 57.3-57.9 / 55.3-55.7 fps, on
     57.4-57.8 / 55.3-55.6 fps: within the noise. The card's main build is `build/miyoo_lp`.
+- **The random long frames** (2026-11-01 15:45, owner asked). Earlier this day: 60-180 ms,
+  at most one per run, at places that differed from run to run (1.2 above, 10:30).
+  - On the device: a 128 MB swap file on the SD card (`/mnt/SDCARD/cachefile`, 9.5 MB used,
+    swappiness 60); 103 MB RAM, 37 MB free while Onion's menu runs. This kernel's
+    /proc/vmstat has no pswpin / pswpout / pgmajfault.
+  - `MIYOO_FRAMES` now logs, after each frame's time, the process's getrusage counts
+    during that frame: major and minor page faults, voluntary and involuntary context
+    switches (miyoo_sdl.c FrameTime). `frametimes.py --long MS` (tools-miyoo) lists the
+    long frames with them. Old files (time only) still read.
+  - 4 rounds of both demos as in play with music (`build/frames_2026-11-01n/`,
+    `miyoo/tools/q2step_hic.sh`): **no random long frame at all**. demo1's only frames over
+    40 ms are 675, 681 and 687 (52-58 ms) in every round, so they are the demo's content
+    (its end). demo2's longest is 34-42 ms.
+  - Major faults: 0.00-0.07 per frame on average, none in a long frame.
+  - Involuntary switches: 5-7 per frame, 7-14 in the long ones (the two threads).
+  - The random hiccups seen in the morning did not come back in any session since ~13:00.
+    Those runs had the player's config (show fps on) until 10:50, and the shots and
+    timings ran right after MainUI quit.
+  - Next: catch them in real play, where the timedemos may not show them (level loads,
+    saves, Onion's background tasks): a play log as in tyrquake-miyoo (MIYOO_FRAMES from
+    launch.sh while the owner plays, written at exit).
 - **Where it stood (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
   play (+50 % / +64 %)**; at timedemo speed 67 / 60.5 fps. Pixel for pixel the same. The
   card's main build is `build/miyoo_s3c`.
