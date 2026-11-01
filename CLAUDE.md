@@ -13,3 +13,4 @@ updated after each step.
   `G:\Emulacja\redriver2-miyoo\repos\REDRIVER2\miyoo\tools\`. Toolchain:
   `G:\Emulacja\redriver2-miyoo\deps\arm-gnu-toolchain-13.3.rel1-*`.
 - Repo files in English; chat with the owner in Polish.
+- Shared Miyoo knowledge for all projects: the `miyoo` skill (`~/.claude/skills/miyoo/SKILL.md`: owner rules, device facts, shared tools) and `G:\Emulacja\miyoo.md` (the full measured notes). Add cross-project findings there.
