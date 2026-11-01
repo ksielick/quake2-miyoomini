@@ -1,0 +1,4 @@
+# busybox on the device fails on CRLF scripts (core.autocrlf=true here)
+*.sh text eol=lf
+*.port text eol=lf
+*.S text eol=lf

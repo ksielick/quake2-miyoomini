@@ -114,6 +114,7 @@ main(int argc, char **argv)
 #ifndef __HAIKU__
 	/* Prevent running Quake II as root. Only very mad
 	   minded or stupid people even think about it. :) */
+#ifndef MIYOO_MINI	/* (everything runs as root on the Miyoo Mini's OnionOS) */
 	if (getuid() == 0)
 	{
 		printf("Quake II shouldn't be run as root! Backing out to save your ass. If\n");
@@ -122,6 +123,7 @@ main(int argc, char **argv)
 
 		return 1;
 	}
+#endif
 #endif
 
 	// Enforce the real UID to prevent setuid crap

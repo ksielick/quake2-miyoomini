@@ -109,7 +109,58 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
 - The idle "Sleep timer" is off on the owner's device. It runs on battery: check the battery
   (`/customer/app/axp_test`) before and after long tests.
 
-## Plan (2026-11-01, nothing built yet): reuse what the other ports already have
+## Status
+
+- **2026-11-01, step 1 (skeleton) built, not yet run on the device.**
+  - `miyoo/build/build_miyoo.sh` (Git Bash, no make) builds `build/miyoo/quake2`,
+    `ref_soft.so` and `baseq2/game.so`, dynamic, all at glibc <= 2.28 (the script checks).
+    Unstripped copies (`*.unstripped`) are kept next to them for addr2line.
+  - From tqrun: `miyoo/build/start.S` (entry point, init/fini in
+    `miyoo/platform/miyoo_start.c`), `glibc_compat.h/.c` (added: `fmod` and `dl*` pins).
+    `-nostartfiles` also drops crtbegin's `__dso_handle`, which `atexit` needs:
+    `miyoo_start.c` defines it.
+  - `miyoo/platform/`: the SDL2 subset (~95 functions, `miyoo_sdl.c`, after RR2's), the panel
+    (`miyoo_fb.c`, after SCR's: CPU copy turned 180°, pan thread, pan back at exit, other frame
+    sizes scaled nearest), the sound (`miyoo_audio.c`: the SDL callback driven by a thread that
+    writes 256-frame blocks to audioserver's FIFO, RR2's transport; 48 kHz only).
+  - Yamagi includes `<SDL2/SDL.h>`: the script copies the SDL2 headers to
+    `build/miyoo/include/SDL2/`.
+  - Windows traps met: the Windows compiler needs `G:/...` paths (`pwd -W`), `-pipe` fails, and
+    `xargs -L 1` joins a line ending in a blank with the next one.
+  - Card files in `miyoo/card/` (mirrors the SD card): `Roms/PORTS/Shortcuts/FPS/Quake II.port`
+    (GameDataFile = the program, so it always shows and `launch.sh` tells if the data is
+    missing, as TyrQuake's) and `Roms/PORTS/Games/Quake2/launch.sh` (lower-case names, HOME =
+    the game folder, performance governor, `+set vid_renderer soft`, 640x480 custom mode,
+    `s_khz 48`).
+- **2026-11-01, step 1 done: it runs on the device.** Installed by hand over SMB to
+  `Roms/PORTS/Games/Quake2/` (the three binaries, `launch.sh`, `baseq2/pak0-2.pak`) and
+  `Roms/PORTS/Shortcuts/FPS/Quake II.port`; the owner confirmed it works from Onion's menu.
+  - Yamagi refuses to run as root, and everything runs as root on Onion: the check in
+    `src/backends/unix/main.c` is left out with `-DMIYOO_MINI` (set by the build script).
+  - `ref_soft.so` needs `src/backends/unix/shared/hunk.c` (the Makefile adds it per OS); the
+    build script now checks that every symbol the modules need outside glibc is exported by
+    `quake2` (the device's loader stops with "symbol lookup error" otherwise).
+  - 100 s of the attract demos (SSH smoke test under a watchdog): no errors, exit 0,
+    audioserver back after; sound opened (audioserver, 48 kHz); picture right way up, colours
+    right. RSS 62 MB, peak 71 MB (tight: ~3 MB free with MainUI out; swap). 27-41 fps shown,
+    ~26 ms CPU per frame, the CPU copy to the panel 1.6-1.9 ms.
+- **Timedemo baseline (2026-11-01 09:10, 1200 MHz, charging at 15 %, 72-77 °C):**
+  `miyoo/tools/bench.sh` (on the device, started through `/tmp/cmd_to_run.sh`), 640x480,
+  stock Yamagi soft renderer on one core, CPU present:
+  - demo1: 688 frames, 20.6 s: **33.4 fps**
+  - demo2: 617 frames, 21.0 s: **29.4 fps**
+  - The bench uses `MIYOO_VSYNC=0` (`miyoo_fb.c`: a frame that would wait for the panel is left
+    out, as tqrun `-V 0`) and `+set nextdemo quit +demomap demoN.dm2` (the server runs
+    `nextdemo` when the demo ends).
+- Game data for tests on the PC: `G:\Emulacja\Quake2\` (outside the repo, never commit it):
+  the owner's GOG "Quake II - Quad Damage" 2.0.0.3, extracted with innoextract
+  (`G:\Emulacja\dethrace-miyoo\deps\innoextract`, `-I baseq2 -I music -I rogue -I xatrix
+  -I quake2_manual`; `-I app/baseq2` matches nothing, include names are path components).
+  574 files, 900 MB: `baseq2/` (pak0-2, video, maps, players), `music/Track02-12.ogg`,
+  `rogue/`, `xatrix/`, `docs/quake2_manual/`; the Windows `gamex86.dll` files removed. The
+  installer was deleted afterwards (owner's request).
+
+## Plan (2026-11-01): reuse what the other ports already have
 
 Rule: don't write a Miyoo piece from scratch when another port has a tested one. Copy it (with
 a comment naming where it came from), adapt it, and note here what changed. When the same piece
