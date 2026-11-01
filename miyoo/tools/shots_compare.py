@@ -64,9 +64,15 @@ def main():
 
     bad = 0
     demos = sorted(d for d in os.listdir(a.ref) if os.path.isdir(os.path.join(a.ref, d)))
+    # (2026-11-01: given the demo folders themselves, it compared nothing and said "OK")
+    if not demos:
+        print(f"ERROR: no <demo>/ folders in {a.ref}: give the set folders (e.g. build/shots/ref)")
+        return 2
+    compared = 0
     for demo in demos:
         rdir, ndir = os.path.join(a.ref, demo), os.path.join(a.new, demo)
         rshots = sorted(f for f in os.listdir(rdir) if f.endswith(SHOT_EXT))
+        compared += len(rshots)
         nshots = sorted(f for f in os.listdir(ndir) if f.endswith(SHOT_EXT)) if os.path.isdir(ndir) else []
         same = 0
         for f in rshots:
@@ -92,7 +98,10 @@ def main():
         extra = [f for f in nshots if f not in rshots]
         print(f"{demo}: {same}/{len(rshots)} identical" + (f", {len(extra)} only in the new set" if extra else ""))
         contact([os.path.join(ndir, f) for f in nshots], w, h, os.path.join(out, f"contact_{demo}.png"))
-    print("OK: all identical" if not bad else f"DIFFERENT: {bad} shot(s), pictures in {out}")
+    if not compared:
+        print("ERROR: no shots in the reference set")
+        return 2
+    print(f"OK: all {compared} identical" if not bad else f"DIFFERENT: {bad} shot(s), pictures in {out}")
     return 1 if bad else 0
 
 

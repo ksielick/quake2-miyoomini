@@ -28,6 +28,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 #include "header/local.h"
+#include "header/sw_mt.h"
+#ifdef MIYOO_MINI
+/* miyoo/platform/miyoo_sdl.c (the executable exports it) */
+int Miyoo_SetIndexedFrame(const uint8_t *idx, const uint32_t *pal, int w, int h);
+#endif
 
 #define NUMSTACKEDGES		2048
 #define NUMSTACKSURFACES	1024
@@ -369,6 +374,7 @@ static void R_ScreenShot_f(void);
 static void
 R_RegisterVariables (void)
 {
+	SW_MT_Init();
 	sw_aliasstats = ri.Cvar_Get ("sw_polymodelstats", "0", 0);
 	sw_clearcolor = ri.Cvar_Get ("sw_clearcolor", "2", 0);
 	sw_drawflat = ri.Cvar_Get ("sw_drawflat", "0", 0);
@@ -501,6 +507,8 @@ RE_Shutdown
 static void
 RE_Shutdown (void)
 {
+	SW_MT_Shutdown();
+
 	// free z buffer
 	if (d_pzbuffer)
 	{
@@ -2237,6 +2245,43 @@ point math used in R_ScanEdges() overflows at width 2048 !!
 */
 char shift_size;
 
+#ifdef MIYOO_MINI
+/* Miyoo Mini: the 8 -> 32 bpp pass of whole rows, 4 pixels per 32-bit load, the palette in
+   a local (tyrquake-miyoo's VID_Update pass), on both threads (sw_mt.c): part 0 the upper
+   rows, part 1 the lower. The same pixels. */
+typedef struct
+{
+	const byte *src;
+	Uint32 *dst;
+	int rows, width;
+	const unsigned *pal;
+} copyjob_t;
+
+static void
+RE_CopyRows(int part, void *arg)
+{
+	const copyjob_t *j = arg;
+	const int half = j->rows / 2;
+	const int r0 = part ? half : 0, r1 = part ? j->rows : half;
+	const byte *src = j->src + (size_t)r0 * j->width;
+	const byte *src_max = j->src + (size_t)r1 * j->width;
+	Uint32 *dst = j->dst + (size_t)r0 * j->width;
+	const unsigned *pal = j->pal;
+
+	while (src < src_max)
+	{
+		const uint32_t four = *(const uint32_t *)src;
+
+		dst[0] = pal[four & 0xff];
+		dst[1] = pal[(four >> 8) & 0xff];
+		dst[2] = pal[(four >> 16) & 0xff];
+		dst[3] = pal[four >> 24];
+		src += 4;
+		dst += 4;
+	}
+}
+#endif
+
 static void
 RE_CopyFrame(Uint32 *pixels, int pitch, SDL_Rect *rect)
 {
@@ -2254,6 +2299,21 @@ RE_CopyFrame(Uint32 *pixels, int pitch, SDL_Rect *rect)
 		dst = pixels;
 		src = vid_buffer + rect->y * vid_buffer_width;
 		src_max = src + rect->h * vid_buffer_width;
+
+#ifdef MIYOO_MINI
+		/* (RE_CopyRows: rows a multiple of 4 wide, vid_buffer malloc'ed: 4-byte aligned) */
+		if (!(((uintptr_t)src | (uintptr_t)vid_buffer_width) & 3))
+		{
+			copyjob_t j = { src, dst, rect->h, vid_buffer_width, sdl_palette };
+
+			if (!SW_MT_RunBoth(RE_CopyRows, &j))
+			{
+				RE_CopyRows(0, &j);
+				RE_CopyRows(1, &j);
+			}
+			src = (byte *)src_max;	/* done */
+		}
+#endif
 
 		while (src < src_max)
 		{
@@ -2370,6 +2430,18 @@ RE_FlushFrame(int vmin, int vmax)
 		return;
 	}
 
+#ifdef MIYOO_MINI
+	/* Miyoo Mini: the 8-bit frame and its palette to the platform layer, whose 2D engine
+	   converts it (MI_GFX I8, miyoo/platform/miyoo_fb.c MiyooFb_PresentI8): no 8 -> 32 bpp
+	   pass on the CPU. 0: not there (MIYOO_GFX_I8=0, no engine): the texture as usual. */
+	if (!texture_high_color &&
+		Miyoo_SetIndexedFrame(vid_buffer, (const uint32_t *)sw_state.currentpalette,
+			vid_buffer_width, vid_buffer_height))
+	{
+		/* (nothing to copy) */
+	}
+	else
+#endif
 	if (!texture_high_color)
 	{
 		if (sw_partialrefresh->value)

@@ -388,8 +388,9 @@ shots against `build/shots/ref` (bit-exact, the owner's rule). Owner's order, 20
 4. **Experiments that need the owner's yes**
    - MI_GFX with an 8-bit palette source (I8 -> ARGB8888), if the SDK has it: the 8 -> 32
      pass would leave the CPU and the picture would stay the same. Unknown: a short test.
+     (Owner: try it, with a way back. Done: see the results, +7 % / +5 %.)
    - RGB565 output as TyrQuake (half the writes; colours lose their low bits: a visible
-     change).
+     change). **Owner: no, the game's look must not change** (2026-11-01).
    - A resolution option (480x360, 320x240, scaled by MI_GFX): a player's choice.
 5. **To check**: OGG music decoding runs in the game thread (TyrQuake: ~1 ms on a thread);
    first see whether the tracks are on the card.
@@ -433,4 +434,87 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - -O3 + LTO (ref_soft.so only; `OPT=-O3 LTO=1 build_miyoo.sh`): **+4-5 %**, demo1's
     longest frames shorter. LTO needed tyrquake-miyoo's `GLIBC_COMPAT_WRAP` (the .symver
     pins are lost in LTO units: the build's glibc check caught `pow@GLIBC_2.29`), plus
-    `fmod`. Shots: still to check.
+    `fmod`. Shots: see the correction below (checked again: identical).
+- **1.2 PGO + -O3 + LTO** (2026-11-01 10:30, A B C A B C, files in `build/frames_2026-11-01b/`):
+
+  | | demo1 fps | demo2 fps | demo1 p50 / p90 / p99 ms | demo2 p50 / p90 / p99 ms |
+  |---|---|---|---|---|
+  | A: -O2 | 38.4 / 38.5 | 33.0 / 33.5 | 25.7 / 33.0 / 43.7 | 29.4 / 39.1 / 55.0 |
+  | B: -O3 + LTO | 38.8 / 40.1 | 35.2 / 34.5 | 24.9 / 32.2 / 45.4 | 27.8 / 36.7 / 51.7 |
+  | C: PGO + -O3 + LTO | **41.3 / 41.3** | **36.1 / 36.0** | 24.1 / 29.9 / 38.7 | 27.1 / 35.0 / 50.1 |
+
+  - PGO + LTO: **+7.5 % / +8 %** over -O2 (as tyrquake-miyoo's ~7 %); shots identical (see
+    the correction below). The binaries got smaller (ref_soft.so 229 -> 192 KB).
+  - The profile: `PGO=gen OPT=-O3 build_miyoo.sh <out>`, that build's quake2, ref_soft.so and
+    baseq2/game.so run from `$GAME/test_pgogen` (bench.sh BINDIR: game.so came from there too),
+    demo1 and demo2 (~3.5x slower: 11.7 / 10.2 fps). `miyoo/tools/q2step_pgo.sh`.
+    **The Windows-hosted gcc writes the .gcda paths with backslashes**: on the device they
+    became files in /tmp named `pgo\G~\Emulacja\quake2-miyoomini\miyoo#pgo#<target>#<obj>.gcda`
+    (no /tmp/pgo directory). Sorted by the part after `#pgo#` into `miyoo/pgo/<target>/<obj>.gcda`
+    (149 files), which `PGO=use` reads (the per-target -dumpdir). TODO: a pgo.sh doing all.
+  - A stale profile after code changes: only the changed functions lose it (-Wno-missing-
+    profile, -fprofile-correction). Work goes on with -O3 + LTO; the profile is redone before
+    a release.
+  - **Random single long frames** (60-180 ms, one per run at most, at places that differ
+    run to run: 235 in B1 demo1 121 ms, 593 in B2 demo2 178 ms, 193 in C2 demo1 84 ms): the
+    system, not the game's content. To look into (frame pacing): swap (~5 MB free under
+    Onion), page faults, other processes (record ru_majflt / ru_nivcsw around such frames).
+- **1.3 RE_CopyFrame 4 pixels per load, and 2.1 the worker thread** (2026-11-01 10:35, build
+  `-O3 + LTO`, A B C A B C, files in `build/frames_2026-11-01c/`):
+
+  | | demo1 fps | demo2 fps |
+  |---|---|---|
+  | A: -O3 + LTO before | 40.1 / 39.7 | 35.2 / 34.9 |
+  | B: 4 pixels per load (`sw_threads 0`) | 42.2 / 42.0 | 36.9 / 36.7 |
+  | C: and on two threads (`sw_threads 1`) | **42.9 / 42.5** | **37.0 / 37.5** |
+
+  - `RE_CopyRows` (sw_main.c, `#ifdef MIYOO_MINI`): one 32-bit load for 4 indices, the
+    palette in a local: **+5 %**. On both threads (upper / lower half): +1-1.5 % more.
+  - `sw_mt.c` (new, from tyrquake-miyoo's d_mt.c): the worker on core 1, `SW_MT_RunBoth`
+    (spin, `sched_yield` after 2000, then a condvar); cvar `sw_threads` (1 on the Miyoo).
+    ref_soft.so links `-l:libpthread.so.0`; all pthread symbols GLIBC_2.4.
+- **Correction (2026-11-01 10:50): the shot checks above had checked nothing.**
+  - `shots_compare.py` takes the set folders (`build/shots/ref build/shots/new`, holding
+    `demo1/`, `demo2/`); given the demo folders it found no demos and printed "OK: all
+    identical". It now stops with an error when there is nothing to compare.
+  - Compared properly, every new set differed from the old reference in ~100 % of the pixels,
+    and from each other: **bench.sh used the player's config.cfg** (HOME = the game's
+    folder). After the owner played at 09:37 it had show fps on (the counter was drawn in the
+    timedemos), another brightness (`vid_gamma` 1.3, was 1.4), and the frame numbers no longer
+    matched the same moments. bench.sh now runs with its own settings: HOME=/tmp/q2bench_home,
+    made fresh for each run (the defaults: default.cfg + yq2.cfg).
+  - The timings stay valid: each table's builds ran in the same session with the same config.
+    The absolute fps since 09:37 include drawing the counter (small: the -O2 build gave the
+    same 37.5-38.5 / 32.5-33.5 fps with the clean settings).
+  - New reference `build/shots/ref` (-O2 build, clean settings; the old one is
+    `ref_old_0920`), made twice: 25/25 identical, so the runs repeat. Against it: -O3 + LTO,
+    PGO + LTO, 4 pixels per load, and on two threads: **each 25/25 identical**.
+- **4. MI_GFX converts the 8-bit frame (I8 -> ARGB8888)**, the owner's pick, 2026-11-01 11:00:
+  - The SDK has it: `E_MI_GFX_FMT_I8` (3) and `MI_GFX_SetPalette(fmt, MI_GFX_Palette_t *)`
+    (256 entries of A, R, G, B bytes, then the first and last index; steward-fu/sdl2
+    `mini/inc/mi_gfx.h`, `mi_gfx_datatype.h`).
+  - `miyoo_fb.c` MiyooFb_PresentI8: the 8-bit frame copied into an MMA buffer (0.3 MB),
+    the palette set only when it changes, the blit I8 -> ARGB8888 turned 180°.
+    `miyoo_sdl.c` Miyoo_SetIndexedFrame (exported for ref_soft), RE_FlushFrame hands
+    vid_buffer and the palette over (`#ifdef MIYOO_MINI`); the shots then convert on the
+    CPU (only their frames). **`MIYOO_GFX_I8=0` turns it off** (the CPU pass as before);
+    without the engine or MI_GFX_SetPalette it falls back by itself.
+  - **The picture is the same**: `MIYOO_GFX_CHECK=1` read the page back every 50th frame
+    and compared it with the CPU's palette lookup: 0 pixels differed (8 + 7 checks); shots
+    25/25 identical.
+  - First version waited for the blit on the game thread: **3.4 ms per shown frame**
+    (memcpy, flush, blit), no gain. The timedemo hid it (MIYOO_VSYNC=0 leaves out frames,
+    and a left-out frame costs the I8 path nothing). Now the **pan thread waits for the
+    blit's fence** before showing the page (`s_panFence`), the next present waits for the
+    pan anyway: the game thread spends **0.58 ms** per frame on it.
+  - Measured as in play (bench `VSYNC=1`, `+set vid_maxfps 60`: every frame shown;
+    A B A B; `build/frames_2026-11-01e/`):
+
+    | | demo1 fps | demo2 fps | demo1 p50 / p90 / p99 ms | demo2 p50 / p90 / p99 ms |
+    |---|---|---|---|---|
+    | A: CPU pass on two threads | 42.3 / 42.1 | 37.9 / 37.6 | 23.6 / 29.9 / 41.8 | 26.1 / 33.8 / 43.6 |
+    | B: MI_GFX I8, pan thread waits | **45.1 / 45.2** | **39.4 / 39.8** | 21.9 / 28.1 / 37.6 | 24.7 / 32.6 / 43.4 |
+
+    **+7 % / +5 %.** With no frame limit (timedemo speed): demo1 44.8, demo2 39.3 fps.
+  - So far from 38.5 / 33.5 fps (-O2) to 45.2 / 39.8 fps: **+17 % / +19 %**, every step
+    pixel for pixel the same. PGO not yet on top (its profile is from before these changes).

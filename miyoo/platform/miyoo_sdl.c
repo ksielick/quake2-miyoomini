@@ -520,10 +520,59 @@ static void FrameTime(void)
 
 void MiyooProf_Frame(void);	/* miyoo_prof.c (MIYOO_PROF) */
 
+/* an 8-bit frame from ref_soft (Miyoo_SetIndexedFrame), shown by the 2D engine */
+static struct { const uint8_t *idx; const uint32_t *pal; int w, h; } s_indexed;
+
+int Miyoo_SetIndexedFrame(const uint8_t *idx, const uint32_t *pal, int w, int h)
+{
+	if (!MiyooFb_I8Usable())
+		return 0;
+	s_indexed.idx = idx;
+	s_indexed.pal = pal;
+	s_indexed.w = w;
+	s_indexed.h = h;
+	return 1;
+}
+
 void SDL_RenderPresent(SDL_Renderer *renderer)
 {
 	MiyooProf_Frame();
 	FrameTime();
+	if (s_indexed.idx)
+	{
+		const int w = s_indexed.w, h = s_indexed.h;
+		int ok;
+
+		/* the shots and the CPU fallback need the 32-bit frame: the texture (same size) */
+		if (s_shown && s_shown->w == w && s_shown->h == h)
+		{
+			static int every = -1;
+			static unsigned n;
+			if (every < 0)
+			{
+				const char *e = getenv("MIYOO_SHOTS");
+				every = e ? atoi(e) : 0;
+			}
+			if (every > 0 && n % every == 0 && n)
+			{
+				int i;
+				for (i = 0; i < w * h; i++)
+					s_shown->px[i] = s_indexed.pal[s_indexed.idx[i]];	/* (as RE_CopyFrame) */
+			}
+			n++;
+			SaveShot(s_shown);
+		}
+		ok = MiyooFb_PresentI8(s_indexed.idx, s_indexed.pal, w, h);
+		if (!ok && s_shown && s_shown->w == w && s_shown->h == h)
+		{
+			int i;
+			for (i = 0; i < w * h; i++)
+				s_shown->px[i] = s_indexed.pal[s_indexed.idx[i]];	/* (as RE_CopyFrame) */
+			MiyooFb_Present(s_shown->px, w, h, w);
+		}
+		s_indexed.idx = NULL;
+		return;
+	}
 	if (!s_shown)
 		return;
 	SaveShot(s_shown);

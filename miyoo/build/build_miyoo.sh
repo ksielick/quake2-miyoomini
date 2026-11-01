@@ -123,7 +123,7 @@ echo "  LD quake2"
 echo "  LD ref_soft.so"
 # (with LTO the code is generated here: the compile flags again)
 "$CC" -shared -static-libgcc $PGOF ${LTOF:+$LTOF $OPT $CPUF -fPIC -fomit-frame-pointer -fno-strict-aliasing -fwrapv -ffp-contract=off -fsigned-char -fvisibility=hidden $LTOWRAP} \
-	-o "$OUT/ref_soft.so" "$OUT"/obj/ref_soft/*.o -Wl,--wrap=stat -lm
+	-o "$OUT/ref_soft.so" "$OUT"/obj/ref_soft/*.o -Wl,--wrap=stat -lm -l:libpthread.so.0	# (sw_mt.c)
 echo "  LD baseq2/game.so"
 "$CC" -shared -static-libgcc $PGOF -o "$OUT/baseq2/game.so" "$OUT"/obj/game/*.o -Wl,--wrap=stat -lm
 

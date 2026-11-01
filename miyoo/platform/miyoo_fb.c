@@ -61,7 +61,9 @@ typedef struct
 	int src_blend, dst_blend, mirror, rotate, blend_flags;
 	uint32_t src_const, dst_const;
 } mi_opt;
-enum { MI_FMT_ARGB8888 = 11 };
+enum { MI_FMT_I8 = 3, MI_FMT_ARGB8888 = 11 };
+/* MI_GFX_Palette_t: 256 entries of A, R, G, B bytes, then the first and last index to set */
+typedef struct { uint8_t argb[256][4]; uint16_t start, end; } mi_palette;
 enum { MI_BLD_ZERO = 0, MI_BLD_ONE = 1 };
 enum { MI_MIRROR_NONE = 0, MI_MIRROR_BOTH = 3 };
 
@@ -79,12 +81,15 @@ static struct
 	int32_t (*mma_free)(mi_phy phys);
 	int32_t (*close)(void);
 	int32_t (*sys_exit)(void);
+	int32_t (*set_palette)(int fmt, mi_palette *pal);	/* (MiyooFb_PresentI8) */
 } mi;
 static int s_gfx;	/* the engine is open */
 
 /* the frames lent to the renderer: MMA buffers while s_gfx, else plain memory */
 #define MAX_FRAMES 4
 static struct { uint32_t *px; mi_phy phys; uint32_t size; int mma; } s_frames[MAX_FRAMES];
+/* the 8-bit frame for MiyooFb_PresentI8 (MMA) */
+static struct { uint8_t *px; mi_phy phys; uint32_t size; int w, h; } s_i8;
 
 static void *MiLib(const char *name)
 {
@@ -127,6 +132,7 @@ static void GfxInit(void)
 	*(void **)&mi.mma_free = dlsym(hs, "MI_SYS_MMA_Free");
 	*(void **)&mi.close = dlsym(hg, "MI_GFX_Close");
 	*(void **)&mi.sys_exit = dlsym(hs, "MI_SYS_Exit");
+	*(void **)&mi.set_palette = dlsym(hg, "MI_GFX_SetPalette");	/* (optional) */
 	if (!mi.sys_init || !mi.mma_alloc || !mi.mmap || !mi.flush || !mi.open || !mi.blit || !mi.wait
 		|| !mi.munmap || !mi.mma_free || !mi.close || !mi.sys_exit)
 	{
@@ -198,6 +204,12 @@ static void GfxShutdown(void)
 	if (!s_gfx)
 		return;
 	mi.wait(1, 0);
+	if (s_i8.px)
+	{
+		mi.munmap(s_i8.px, s_i8.size);
+		mi.mma_free(s_i8.phys);
+		s_i8.px = NULL;
+	}
 	for (i = 0; i < MAX_FRAMES; i++)
 		if (s_frames[i].mma)
 			MiyooFb_FreeFrame(s_frames[i].px);
@@ -232,6 +244,9 @@ static pthread_t s_panThread;
 static pthread_mutex_t s_panMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_panCond = PTHREAD_COND_INITIALIZER;
 static int s_panPending = -1;	/* the page to show, -1: none */
+/* the 2D engine's fence of a blit into that page still running (MiyooFb_PresentI8): the pan
+   thread waits for it before showing the page, so the game thread doesn't; -1: none */
+static int s_panFence = -1;
 
 /* Max FPS (the video menu's "max fps", vid_maxfps; MiyooFb_SetMaxFps), as TyrQuake-Miyoo's:
  *   30: each page stays on the panel for two refreshes (29.83 fps): the pan thread waits for
@@ -264,6 +279,16 @@ static int s_panInts;
 
 static double NowMs(void);
 
+/* MIYOO_VSYNC=0 (benchmarks): frames are left out rather than waited for (MiyooFb_Present) */
+static void ReadVsync(void)
+{
+	if (s_vsync < 0)
+	{
+		const char *e = getenv("MIYOO_VSYNC");
+		s_vsync = !(e && *e == '0');
+	}
+}
+
 static void *PanThread(void *arg)
 {
 	(void)arg;
@@ -277,7 +302,12 @@ static void *PanThread(void *arg)
 		while (s_panPending < 0)
 			pthread_cond_wait(&s_panCond, &s_panMutex);
 		const int page = s_panPending;
+		const int fence = s_panFence;
+		s_panFence = -1;
 		pthread_mutex_unlock(&s_panMutex);
+
+		if (fence >= 0)
+			mi.wait(1, (uint16_t)fence);
 
 		s_var.yoffset = page * s_h;
 		ioctl(s_fd, FBIOPAN_DISPLAY, &s_var);
@@ -446,11 +476,7 @@ void MiyooFb_Present(const uint32_t *src, int w, int h, int pitch)
 	/* unlimited, or MIYOO_VSYNC=0 (benchmarks: timedemo): a frame that comes while the last one
 	 * is still waiting for the panel is left out instead of waiting (as tqrun -V 0), so the game
 	 * runs at its own speed */
-	if (s_vsync < 0)
-	{
-		const char *e = getenv("MIYOO_VSYNC");
-		s_vsync = !(e && *e == '0');
-	}
+	ReadVsync();
 	if ((!s_vsync || !s_hold) && s_pages > 1)
 	{
 		int busy;
@@ -553,4 +579,172 @@ void MiyooFb_Present(const uint32_t *src, int w, int h, int pitch)
 		pthread_mutex_unlock(&s_panMutex);
 	}
 	Stats(NowMs() - copyStart);
+}
+
+/* ---- 8-bit frames with their palette, converted by the 2D engine (I8 -> ARGB8888 with
+ * MI_GFX_SetPalette; tried 2026-11-01, the owner's idea: the renderer's 8 -> 32 bpp pass off
+ * the CPU, the same picture). MIYOO_GFX_I8=0: not used (the CPU pass, as before).
+ * MIYOO_GFX_CHECK=1: every 50th frame the page is read back and compared with the palette
+ * lookup on the CPU. */
+static uint32_t s_i8Pal[256];
+static int s_i8PalSet;
+
+int MiyooFb_I8Usable(void)
+{
+	static int usable = -1;
+	if (usable < 0)
+	{
+		const char *e = getenv("MIYOO_GFX_I8");
+		usable = s_gfx && mi.set_palette && !(e && *e == '0');
+		fprintf(stderr, "miyoo: 8-bit frames converted by %s\n", usable ? "the 2D engine (MI_GFX I8)" : "the CPU");
+	}
+	return usable && s_gfx;
+}
+
+static int I8Buffer(int w, int h)
+{
+	const uint32_t size = (uint32_t)w * h;
+	void *virt = NULL;
+
+	if (s_i8.px && s_i8.w == w && s_i8.h == h)
+		return 1;
+	if (s_i8.px)
+	{
+		mi.wait(1, 0);
+		mi.munmap(s_i8.px, s_i8.size);
+		mi.mma_free(s_i8.phys);
+		s_i8.px = NULL;
+	}
+	if (mi.mma_alloc(NULL, size, &s_i8.phys) != 0)
+		return 0;
+	if (mi.mmap(s_i8.phys, size, &virt, 1) != 0)
+	{
+		mi.mma_free(s_i8.phys);
+		return 0;
+	}
+	s_i8.px = virt;
+	s_i8.size = size;
+	s_i8.w = w;
+	s_i8.h = h;
+	return 1;
+}
+
+/* idx: w x h palette indices; pal: 256 entries 0x00RRGGBB. 0: not shown (the caller converts) */
+int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
+{
+	int x, y;
+
+	if (!s_mem || !MiyooFb_I8Usable() || w != s_w || h != s_h || !I8Buffer(w, h))
+		return 0;
+	ReadVsync();
+
+	if ((!s_vsync || !s_hold) && s_pages > 1)
+	{
+		int busy;
+		pthread_mutex_lock(&s_panMutex);
+		busy = s_panPending >= 0;
+		pthread_mutex_unlock(&s_panMutex);
+		if (busy)
+		{
+			s_dropped++;
+			return 1;
+		}
+	}
+	if (s_pages > 1)
+		WaitPan();
+	const double copyStart = NowMs();
+	const int target = s_pages > 1 ? 1 - s_page : 0;
+	uint32_t *page = s_mem + (size_t)target * s_h * s_stride;
+
+	if (!s_i8PalSet || memcmp(s_i8Pal, pal, sizeof(s_i8Pal)))
+	{
+		mi_palette p;
+		int i;
+		memset(&p, 0, sizeof(p));
+		for (i = 0; i < 256; i++)
+		{
+			p.argb[i][0] = 0xFF;
+			p.argb[i][1] = (uint8_t)(pal[i] >> 16);
+			p.argb[i][2] = (uint8_t)(pal[i] >> 8);
+			p.argb[i][3] = (uint8_t)pal[i];
+		}
+		p.start = 0;
+		p.end = 255;
+		mi.wait(1, 0);	/* (a blit in flight keeps the old palette) */
+		if (mi.set_palette(MI_FMT_I8, &p) != 0)
+		{
+			fprintf(stderr, "miyoo: MI_GFX_SetPalette failed: the CPU converts the frames\n");
+			mi.set_palette = NULL;
+			return 0;
+		}
+		memcpy(s_i8Pal, pal, sizeof(s_i8Pal));
+		s_i8PalSet = 1;
+	}
+
+	static int check = -1, n;
+	uint16_t fence = 0;
+	if (check < 0)
+	{
+		const char *e = getenv("MIYOO_GFX_CHECK");
+		check = e && *e == '1';
+	}
+	n++;
+
+	memcpy(s_i8.px, idx, s_i8.size);
+	{
+		mi_surface s = { s_i8.phys, MI_FMT_I8, (uint32_t)w, (uint32_t)h, (uint32_t)w };
+		mi_surface d = { (mi_phy)s_fbPhys + (mi_phy)target * s_h * s_lineBytes, MI_FMT_ARGB8888,
+			(uint32_t)s_w, (uint32_t)s_h, (uint32_t)s_lineBytes };
+		mi_rect sr = { 0, 0, (uint32_t)w, (uint32_t)h }, dr = { 0, 0, (uint32_t)s_w, (uint32_t)s_h };
+		mi_opt o;
+
+		memset(&o, 0, sizeof(o));
+		o.clip = dr;
+		o.src_blend = MI_BLD_ONE;
+		o.dst_blend = MI_BLD_ZERO;
+		o.mirror = s_rotate ? MI_MIRROR_BOTH : MI_MIRROR_NONE;
+		mi.flush(s_i8.px, s_i8.size);
+		if (mi.blit(&s, &sr, &d, &dr, &o, &fence))
+		{
+			fprintf(stderr, "miyoo: MI_GFX I8 blit failed: the CPU converts the frames\n");
+			mi.set_palette = NULL;
+			return 0;
+		}
+		/* the pan thread waits for the blit (s_panFence); the next present waits for the pan
+		   (WaitPan), so the buffer and the palette are free again by then. Checks, and a
+		   single page, wait here. */
+		if (check || s_pages <= 1)
+			mi.wait(1, fence);
+	}
+
+	{
+		if (check && s_rotate && n % 50 == 0)
+		{
+			int bad = 0, first = -1;
+			for (y = 0; y < s_h; y++)
+				for (x = 0; x < s_w; x++)
+					if ((page[y * s_stride + x] & 0xFFFFFF) != (pal[idx[(h - 1 - y) * w + (w - 1 - x)]] & 0xFFFFFF))
+					{
+						if (first < 0)
+							first = y * s_w + x;
+						bad++;
+					}
+			fprintf(stderr, "miyoo: gfx I8 check, frame %d: %d pixels differ from the CPU lookup%s", n, bad, bad ? "" : "\n");
+			if (bad)
+				fprintf(stderr, " (first at %d,%d: %08x, CPU %08x)\n", first % s_w, first / s_w,
+					page[(first / s_w) * s_stride + first % s_w],
+					pal[idx[(h - 1 - first / s_w) * w + (w - 1 - first % s_w)]]);
+		}
+	}
+
+	if (s_pages > 1)
+	{
+		pthread_mutex_lock(&s_panMutex);
+		s_panPending = target;
+		s_panFence = check ? -1 : fence;
+		pthread_cond_signal(&s_panCond);
+		pthread_mutex_unlock(&s_panMutex);
+	}
+	Stats(NowMs() - copyStart);
+	return 1;
 }

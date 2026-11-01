@@ -22,7 +22,12 @@ GAME=/mnt/SDCARD/Roms/PORTS/Games/Quake2
 OUT=/tmp/q2bench.txt
 DEMOS=${*:-demo1 demo2}
 cd "$GAME" || exit 1
-export HOME="$GAME" MIYOO_VSYNC=0
+# The runs use their own settings, the defaults (default.cfg, yq2.cfg), not the player's:
+# the player's config.cfg (show fps, brightness...) changed the shots and the timings
+# (2026-11-01). Made fresh for each run in /tmp.
+# VSYNC=1: every frame waits for the panel and is shown, as in play (with +set vid_maxfps 60:
+# one refresh a frame); default 0: frames the panel can't take yet are left out (timedemo speed)
+export HOME=/tmp/q2bench_home MIYOO_VSYNC=${VSYNC:-0}
 
 { echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; } 2>/dev/null
 CPU1=/sys/devices/system/cpu/cpu1/online
@@ -45,6 +50,8 @@ for d in $DEMOS; do
 		rm -rf "$MIYOO_SHOTS_DIR"
 		mkdir -p "$MIYOO_SHOTS_DIR"
 	fi
+	rm -rf "$HOME"
+	mkdir -p "$HOME"
 	[ -n "$FRAMES" ] && export MIYOO_FRAMES="/tmp/q2frames_${FRAMESET:-new}_$d.txt"
 	# BINDIR: another build (its quake2 and ref_soft.so; the data stays the current dir's)
 	"${BINDIR:-.}/quake2" +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
