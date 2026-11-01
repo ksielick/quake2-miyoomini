@@ -9,5 +9,8 @@
 int MiyooFb_Open(void);
 void MiyooFb_Present(const uint32_t *argb, int w, int h, int pitch);
 void MiyooFb_Close(void);
+/* frames for the renderer: in memory the 2D engine reads, when it is there (open the panel first) */
+uint32_t *MiyooFb_AllocFrame(int w, int h);
+void MiyooFb_FreeFrame(uint32_t *px);
 
 #endif

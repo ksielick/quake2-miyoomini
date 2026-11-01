@@ -152,6 +152,28 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
   - The bench uses `MIYOO_VSYNC=0` (`miyoo_fb.c`: a frame that would wait for the panel is left
     out, as tqrun `-V 0`) and `+set nextdemo quit +demomap demoN.dm2` (the server runs
     `nextdemo` when the demo ends).
+- **2026-11-01, step 3: reference screenshot set.** `MIYOO_SHOTS=N` (`miyoo_sdl.c` SaveShot)
+  saves every Nth presented frame (N, 2N, ...) as `NNNNN.argb`, the renderer's 32-bit frame;
+  `bench.sh` with `SHOTS=N SET=name` puts them in `<game>/shots/<name>/<demo>/` on the card;
+  `miyoo/tools/shots_compare.py` (TyrQuake's, plus `.argb`) compares two sets.
+  - Two runs of the same build: identical except frame 0, which shows the console with the
+    date and time (so shots start at frame N). Every other frame is bit-identical: the
+    timedemo is deterministic.
+  - The reference set: `build/shots/ref/` (SHOTS=50: demo1 13 shots, demo2 12), from the build
+    of commit 7d2f229a (CPU present). Fetch new sets over SMB from
+    `\\192.168.0.246\Roms\PORTS\Games\Quake2\shots\<name>`.
+- **2026-11-01, step 4: present through MI_GFX** (tqrun's code in `miyoo_fb.c`). The texture
+  (`SDL_CreateTexture`) lives in MMA memory (`MiyooFb_AllocFrame`); `SDL_RenderPresent` flushes
+  the cache and blits it, mirrored both ways, into the page not shown; CPU copy as fallback
+  (`MIYOO_GFX=0`, or no MI libraries). MI cleanup at exit as tqrun.
+  - Checked with `MIYOO_GFX_CHECK=1` (every 50th frame the page is read back and compared with
+    the CPU copy): 0 pixels differ in all 13 checks of demo1.
+  - Timedemo (09:19, 1200 MHz, charging, 74-78 °C): demo1 **33.7 fps** (was 33.4), demo2
+    **29.9 fps** (was 29.4). The present took ~1.3 ms of the game thread instead of ~1.65
+    (cache flush + waiting for the blit). Small, as expected: ~30 ms of the frame is the
+    renderer itself.
+  - Not done (small gain, ~1.3 ms at most): the blit on the pan thread. It needs two textures,
+    and Yamagi may copy only changed rows into the texture (`sw_partialrefresh`).
 - Game data for tests on the PC: `G:\Emulacja\Quake2\` (outside the repo, never commit it):
   the owner's GOG "Quake II - Quad Damage" 2.0.0.3, extracted with innoextract
   (`G:\Emulacja\dethrace-miyoo\deps\innoextract`, `-I baseq2 -I music -I rogue -I xatrix

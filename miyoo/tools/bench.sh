@@ -11,6 +11,9 @@
 # picture, not waited for), quitting at the demo's end (nextdemo quit). The game's own line
 # "N frames, S seconds: F fps" is the result; the clock, temperature and battery are noted.
 # EXTRA: more console settings for every run (e.g. EXTRA="+set sw_drawflat 1").
+# SHOTS=N: every Nth frame saved to <game>/shots/<SET>/<demo>/NNNNN.argb (SET default "new"),
+# for miyoo/tools/shots_compare.py on the PC (fetch them over SMB: Roms\PORTS\Games\Quake2\shots).
+# The shots cost time: such runs are not timings.
 GAME=/mnt/SDCARD/Roms/PORTS/Games/Quake2
 OUT=/tmp/q2bench.txt
 DEMOS=${*:-demo1 demo2}
@@ -25,13 +28,18 @@ CPU1=/sys/devices/system/cpu/cpu1/online
 	echo "# $(date '+%Y-%m-%d %H:%M:%S') up $(cut -d' ' -f1 /proc/uptime) s," \
 		"$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq) kHz," \
 		"$(cat /sys/devices/system/cpu/cpufreq/temp_out 2>/dev/null)," \
-		"battery $(/customer/app/axp_test 2>/dev/null)${EXTRA:+, $EXTRA}"
+		"battery $(/customer/app/axp_test 2>/dev/null)${EXTRA:+, $EXTRA}${SHOTS:+, shots every $SHOTS (not a timing)}"
 } > "$OUT"
 
 for d in $DEMOS; do
 	# a watchdog: a run that hangs is stopped after 300 s
 	( sleep 300; killall -9 quake2 2>/dev/null ) &
 	W=$!
+	if [ -n "$SHOTS" ]; then
+		export MIYOO_SHOTS="$SHOTS" MIYOO_SHOTS_DIR="$GAME/shots/${SET:-new}/$d"
+		rm -rf "$MIYOO_SHOTS_DIR"
+		mkdir -p "$MIYOO_SHOTS_DIR"
+	fi
 	./quake2 +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
 		+set vid_fullscreen 0 +set s_khz 48 $EXTRA +set timedemo 1 +set nextdemo quit \
 		+demomap "$d.dm2" > "/tmp/q2bench_$d.log" 2>&1

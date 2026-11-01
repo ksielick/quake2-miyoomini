@@ -375,7 +375,7 @@ SDL_Texture *SDL_CreateTexture(SDL_Renderer *renderer, Uint32 format, int access
 	t = (SDL_Texture *)calloc(1, sizeof(*t));
 	t->w = w;
 	t->h = h;
-	t->px = (uint32_t *)calloc((size_t)w * h, 4);
+	t->px = MiyooFb_AllocFrame(w, h);	/* (MMA memory: shown by the 2D engine) */
 	if (!t->px)
 	{
 		free(t);
@@ -390,7 +390,7 @@ void SDL_DestroyTexture(SDL_Texture *texture)
 		return;
 	if (s_shown == texture)
 		s_shown = NULL;
-	free(texture->px);
+	MiyooFb_FreeFrame(texture->px);
 	free(texture);
 }
 
@@ -411,10 +411,47 @@ int SDL_RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect 
 	return 0;
 }
 
+/* Screenshots for bit-exact comparisons of builds (miyoo/tools/bench.sh SHOTS=N,
+ * miyoo/tools/shots_compare.py): MIYOO_SHOTS=N saves every Nth frame the game presents (counted
+ * from the first, whether or not the panel shows it) as <MIYOO_SHOTS_DIR>/NNNNN.argb, the frame
+ * as the renderer made it (w x h, 32-bit 0xAARRGGBB little-endian). A timedemo draws the same
+ * frames every run, so a build that draws the same gives the same files. Slow: not for timings. */
+static void SaveShot(const SDL_Texture *t)
+{
+	static int every = -1;
+	static unsigned frame;
+	static const char *dir;
+	unsigned k;
+	char path[512];
+	FILE *f;
+
+	if (every < 0)
+	{
+		const char *e = getenv("MIYOO_SHOTS");
+		every = e ? atoi(e) : 0;
+		dir = getenv("MIYOO_SHOTS_DIR");
+		if (!dir)
+			dir = ".";
+	}
+	/* frames N, 2N, ... (frame 0 shows the console with the date and time, different every run) */
+	k = frame++;
+	if (every <= 0 || k == 0 || k % every)
+		return;
+	snprintf(path, sizeof(path), "%s/%05u.argb", dir, k);
+	f = fopen(path, "wb");
+	if (f)
+	{
+		fwrite(t->px, 4, (size_t)t->w * t->h, f);
+		fclose(f);
+	}
+}
+
 void SDL_RenderPresent(SDL_Renderer *renderer)
 {
-	if (s_shown)
-		MiyooFb_Present(s_shown->px, s_shown->w, s_shown->h, s_shown->w);
+	if (!s_shown)
+		return;
+	SaveShot(s_shown);
+	MiyooFb_Present(s_shown->px, s_shown->w, s_shown->h, s_shown->w);
 }
 
 /* ---- joysticks, game controllers, haptics: none (the buttons are the keyboard) */

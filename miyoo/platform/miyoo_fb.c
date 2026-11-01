@@ -10,8 +10,16 @@
  * at the start is shown again (as tyrquake-miyoo's tqrun).
  *
  * Added here: frames of other sizes than the panel's are scaled to it, nearest pixel.
- * Next step (miyoo/NOTES.md, plan): the copy by the SoC's 2D engine (MI_GFX), as tqrun. */
+ *
+ * The copy by the SoC's 2D engine (MI_GFX), from tyrquake-miyoo's tqrun.c (gfx_init, gfx_blit,
+ * gfx_shutdown): the renderer's frames live in memory the engine reads (MMA, mapped cached:
+ * MiyooFb_AllocFrame), and one blit turns a frame 180 degrees (mirrored both ways) and scales it
+ * into the page not shown, with no work for the cores. The vendor libraries are loaded at run
+ * time; without them, or with MIYOO_GFX=0, the CPU copies as above. Everything the engine got is
+ * given back at exit (MiyooFb_Close): without that, Onion's SDL apps started later (Battery
+ * Monitor) showed a black page until a reboot. */
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <pthread.h>
@@ -37,6 +45,188 @@ static int s_rotate = 1;
 static struct fb_var_screeninfo s_var;
 static int s_vsync = -1;		/* MIYOO_VSYNC, read at the first frame */
 static int s_dropped;			/* frames left out (MIYOO_VSYNC=0) */
+static unsigned long s_fbPhys;	/* the framebuffer's physical address (fix.smem_start) */
+static int s_lineBytes;
+
+/* ---- the SoC's 2D engine (tqrun.c): the types follow the SigmaStar SDK's layouts
+ * (mi_gfx_datatype.h, as steward-fu's SDL2 for the Mini) */
+typedef unsigned long long mi_phy;
+typedef struct { int32_t x, y; uint32_t w, h; } mi_rect;
+typedef struct { mi_phy phys; int fmt; uint32_t w, h, stride; } mi_surface;
+typedef struct { uint8_t enable; int op, fmt; uint32_t start, end; } mi_colorkey;
+typedef struct
+{
+	mi_rect clip;
+	mi_colorkey src_key, dst_key;
+	int src_blend, dst_blend, mirror, rotate, blend_flags;
+	uint32_t src_const, dst_const;
+} mi_opt;
+enum { MI_FMT_ARGB8888 = 11 };
+enum { MI_BLD_ZERO = 0, MI_BLD_ONE = 1 };
+enum { MI_MIRROR_NONE = 0, MI_MIRROR_BOTH = 3 };
+
+static struct
+{
+	int32_t (*sys_init)(void);
+	int32_t (*mma_alloc)(uint8_t *heap, uint32_t size, mi_phy *phys);
+	int32_t (*mmap)(unsigned long long phys, uint32_t size, void **virt, uint8_t cached);
+	int32_t (*flush)(void *virt, uint32_t size);
+	int32_t (*open)(void);
+	int32_t (*blit)(mi_surface *src, mi_rect *src_rect, mi_surface *dst, mi_rect *dst_rect,
+		mi_opt *opt, uint16_t *fence);
+	int32_t (*wait)(uint8_t all, uint16_t fence);
+	int32_t (*munmap)(void *virt, uint32_t size);
+	int32_t (*mma_free)(mi_phy phys);
+	int32_t (*close)(void);
+	int32_t (*sys_exit)(void);
+} mi;
+static int s_gfx;	/* the engine is open */
+
+/* the frames lent to the renderer: MMA buffers while s_gfx, else plain memory */
+#define MAX_FRAMES 4
+static struct { uint32_t *px; mi_phy phys; uint32_t size; int mma; } s_frames[MAX_FRAMES];
+
+static void *MiLib(const char *name)
+{
+	static const char *dirs[] = { "", "/customer/lib/", "/config/lib/", "/lib/", "/usr/lib/" };
+	char path[96];
+	unsigned i;
+	for (i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++)
+	{
+		void *h;
+		snprintf(path, sizeof(path), "%s%s", dirs[i], name);
+		h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+		if (h)
+			return h;
+	}
+	return NULL;
+}
+
+static void GfxInit(void)
+{
+	const char *e = getenv("MIYOO_GFX");
+	void *hs, *hg;
+
+	if (e && *e == '0')
+		return;
+	hs = MiLib("libmi_sys.so");
+	hg = MiLib("libmi_gfx.so");
+	if (!hs || !hg)
+	{
+		fprintf(stderr, "miyoo: no MI_GFX libraries, the CPU copies the frames\n");
+		return;
+	}
+	*(void **)&mi.sys_init = dlsym(hs, "MI_SYS_Init");
+	*(void **)&mi.mma_alloc = dlsym(hs, "MI_SYS_MMA_Alloc");
+	*(void **)&mi.mmap = dlsym(hs, "MI_SYS_Mmap");
+	*(void **)&mi.flush = dlsym(hs, "MI_SYS_FlushInvCache");
+	*(void **)&mi.open = dlsym(hg, "MI_GFX_Open");
+	*(void **)&mi.blit = dlsym(hg, "MI_GFX_BitBlit");
+	*(void **)&mi.wait = dlsym(hg, "MI_GFX_WaitAllDone");
+	*(void **)&mi.munmap = dlsym(hs, "MI_SYS_Munmap");
+	*(void **)&mi.mma_free = dlsym(hs, "MI_SYS_MMA_Free");
+	*(void **)&mi.close = dlsym(hg, "MI_GFX_Close");
+	*(void **)&mi.sys_exit = dlsym(hs, "MI_SYS_Exit");
+	if (!mi.sys_init || !mi.mma_alloc || !mi.mmap || !mi.flush || !mi.open || !mi.blit || !mi.wait
+		|| !mi.munmap || !mi.mma_free || !mi.close || !mi.sys_exit)
+	{
+		fprintf(stderr, "miyoo: MI_GFX functions missing, the CPU copies the frames\n");
+		return;
+	}
+	mi.sys_init();
+	mi.open();
+	s_gfx = 1;
+	fprintf(stderr, "miyoo: frames shown by the 2D engine (MI_GFX)\n");
+}
+
+/* a frame of w x h 32-bit pixels for the renderer: in MMA memory when the engine is open */
+uint32_t *MiyooFb_AllocFrame(int w, int h)
+{
+	const uint32_t size = (uint32_t)w * h * 4;
+	int i;
+
+	for (i = 0; i < MAX_FRAMES && s_frames[i].px; i++)
+		;
+	if (i == MAX_FRAMES)
+		return NULL;
+	if (s_gfx)
+	{
+		void *virt = NULL;
+		if (mi.mma_alloc(NULL, size, &s_frames[i].phys) == 0)
+		{
+			if (mi.mmap(s_frames[i].phys, size, &virt, 1) == 0)
+			{
+				memset(virt, 0, size);
+				s_frames[i].px = (uint32_t *)virt;
+				s_frames[i].size = size;
+				s_frames[i].mma = 1;
+				return s_frames[i].px;
+			}
+			mi.mma_free(s_frames[i].phys);
+		}
+		fprintf(stderr, "miyoo: no MMA memory for a %dx%d frame: the CPU copies it\n", w, h);
+	}
+	s_frames[i].px = (uint32_t *)calloc(size, 1);
+	s_frames[i].size = size;
+	s_frames[i].mma = 0;
+	return s_frames[i].px;
+}
+
+void MiyooFb_FreeFrame(uint32_t *px)
+{
+	int i;
+	for (i = 0; i < MAX_FRAMES; i++)
+	{
+		if (!px || s_frames[i].px != px)
+			continue;
+		if (s_frames[i].mma)
+		{
+			mi.wait(1, 0);
+			mi.munmap(px, s_frames[i].size);
+			mi.mma_free(s_frames[i].phys);
+		}
+		else
+			free(px);
+		memset(&s_frames[i], 0, sizeof(s_frames[i]));
+	}
+}
+
+/* everything the engine got, back to the system (tqrun's gfx_shutdown) */
+static void GfxShutdown(void)
+{
+	int i;
+	if (!s_gfx)
+		return;
+	mi.wait(1, 0);
+	for (i = 0; i < MAX_FRAMES; i++)
+		if (s_frames[i].mma)
+			MiyooFb_FreeFrame(s_frames[i].px);
+	mi.close();
+	mi.sys_exit();
+	s_gfx = 0;
+}
+
+/* the frame src (an MMA frame, w x h) into a page, turned 180 degrees, scaled to fill it */
+static int GfxBlit(int k, int w, int h, int page)
+{
+	mi_surface s = { s_frames[k].phys, MI_FMT_ARGB8888, (uint32_t)w, (uint32_t)h, (uint32_t)w * 4 };
+	mi_surface d = { (mi_phy)s_fbPhys + (mi_phy)page * s_h * s_lineBytes, MI_FMT_ARGB8888,
+		(uint32_t)s_w, (uint32_t)s_h, (uint32_t)s_lineBytes };
+	mi_rect sr = { 0, 0, (uint32_t)w, (uint32_t)h }, dr = { 0, 0, (uint32_t)s_w, (uint32_t)s_h };
+	mi_opt o;
+	uint16_t fence = 0;
+
+	memset(&o, 0, sizeof(o));
+	o.clip = dr;
+	o.src_blend = MI_BLD_ONE;
+	o.dst_blend = MI_BLD_ZERO;
+	o.mirror = s_rotate ? MI_MIRROR_BOTH : MI_MIRROR_NONE;
+	mi.flush(s_frames[k].px, s_frames[k].size);
+	if (mi.blit(&s, &sr, &d, &dr, &o, &fence))
+		return 0;
+	mi.wait(1, fence);
+	return 1;
+}
 
 static pthread_t s_panThread;
 static pthread_mutex_t s_panMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -81,6 +271,7 @@ void MiyooFb_Close(void)
 		return;
 	if (s_pages > 1)
 		WaitPan();
+	GfxShutdown();
 	/* a black screen until Onion's menu draws again, on the page shown at the start */
 	memset(s_mem, 0, (size_t)s_stride * 4 * s_var.yres_virtual);
 	if (s_pages > 1)
@@ -131,8 +322,11 @@ int MiyooFb_Open(void)
 	}
 	s_startYOffset = s_var.yoffset;
 	s_page = s_var.yoffset >= (unsigned)s_h ? 1 : 0;
+	s_fbPhys = fix.smem_start;
+	s_lineBytes = fix.line_length;
 	if (rot)
 		s_rotate = atoi(rot);
+	GfxInit();
 
 	fprintf(stderr, "miyoo: framebuffer %dx%d, %d bpp, %d page(s), rotate %d\n", s_w, s_h, s_var.bits_per_pixel, s_pages, s_rotate);
 
@@ -216,8 +410,39 @@ void MiyooFb_Present(const uint32_t *src, int w, int h, int pitch)
 	const double copyStart = NowMs();
 	const int target = s_pages > 1 ? 1 - s_page : 0;
 	uint32_t *page = s_mem + (size_t)target * s_h * s_stride;
+	int k;
 
-	if (w == s_w && h == s_h)
+	for (k = 0; k < MAX_FRAMES && !(s_frames[k].mma && s_frames[k].px == src); k++)
+		;
+	if (k < MAX_FRAMES && pitch == w && GfxBlit(k, w, h, target))
+	{
+		/* MIYOO_GFX_CHECK=1: every 50th frame, the page read back and compared with what the
+		 * CPU copy writes (panel-sized frames turned 180 degrees). Reading the uncached page is
+		 * slow: a test, not for timings. */
+		static int check = -1, n;
+		if (check < 0)
+		{
+			const char *e = getenv("MIYOO_GFX_CHECK");
+			check = e && *e == '1';
+		}
+		if (check && w == s_w && h == s_h && s_rotate && ++n % 50 == 0)
+		{
+			int bad = 0, first = -1;
+			for (y = 0; y < s_h; y++)
+				for (x = 0; x < s_w; x++)
+					if ((page[y * s_stride + x] & 0xFFFFFF) != (src[(h - 1 - y) * pitch + (w - 1 - x)] & 0xFFFFFF))
+					{
+						if (first < 0)
+							first = y * s_w + x;
+						bad++;
+					}
+			fprintf(stderr, "miyoo: gfx check, frame %d: %d pixels differ from the CPU copy%s", n, bad, bad ? "" : "\n");
+			if (bad)
+				fprintf(stderr, " (first at %d,%d: %08x, CPU %08x)\n", first % s_w, first / s_w,
+					page[(first / s_w) * s_stride + first % s_w], src[(h - 1 - first / s_w) * pitch + (w - 1 - first % s_w)]);
+		}
+	}
+	else if (w == s_w && h == s_h)
 	{
 		for (y = 0; y < s_h; y++)
 		{
