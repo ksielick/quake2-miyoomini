@@ -76,8 +76,8 @@ Collection) and your own Quake II data, which isn't included: `pak0.pak`, `pak1.
    matter.
 3. Play: *Games → Ports → FPS → Quake II*. If it doesn't show, refresh the list from its menu.
 
-Music (optional, not tried on the Miyoo yet): the GOG version's `music` folder
-(`Track02.ogg` ...) next to `baseq2`, or in `baseq2/music/`.
+Music (optional): copy the GOG version's `music` folder (`Track02.ogg` ...) next to `baseq2`,
+or into `baseq2/music/`. It is decoded on the second CPU core, so it costs the game no speed.
 
 Savegames and settings are kept in `Roms/PORTS/Games/Quake2/.yq2/`.
 
