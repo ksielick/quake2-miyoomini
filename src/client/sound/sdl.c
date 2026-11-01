@@ -78,6 +78,91 @@ static const float lpf_default_gain_hf = 0.25F;
 static LpfContext lpf_context;
 static qboolean lpf_is_enabled;
 
+#ifdef MIYOO_MINI
+/*
+ * (Miyoo Mini port) "Sound filter" (cvar s_lowpass, Hz; 0 = off; the Options menu): Quake II
+ * mixed at 11 kHz by default in 1997 (s_khz 11; "high" = 22 kHz), so nothing above ~5.5 or
+ * ~11 kHz reached the speakers, and the card's filter took the rest. Mixed at 48 kHz, the
+ * nearest-sample resampling of the 11 / 22 kHz effects, sounds cut mid-wave and the 8-bit
+ * steps reach the ear as a sharp edge. A 4th-order Butterworth low-pass on the effects (not
+ * on the music, which came from the CD) gives that sound back. tyrquake-miyoo's snd_mix.c
+ * S_LowpassChunk: two biquads (Q 0.5412 and 1.3066), transposed direct form II, per side.
+ * Default 10 kHz (1997's "high", the owner's choice).
+ */
+static cvar_t *s_lowpass;
+static int lp_hz, lp_speed;
+static float lp_b[2][3], lp_a[2][2];
+static float lp_z[2][2][2];	/* [biquad][side][state] */
+
+static void
+SDL_LowpassSetup(int hz, int speed)
+{
+	static const float q[2] = { 0.5412f, 1.3066f };
+	float w0 = 2.0f * (float)M_PI * (float)hz / (float)speed;
+	float c = cosf(w0), s = sinf(w0);
+	int k;
+
+	for (k = 0; k < 2; k++)
+	{
+		float alpha = s / (2.0f * q[k]), a0 = 1.0f + alpha;
+
+		lp_b[k][0] = (1.0f - c) * 0.5f / a0;
+		lp_b[k][1] = (1.0f - c) / a0;
+		lp_b[k][2] = (1.0f - c) * 0.5f / a0;
+		lp_a[k][0] = -2.0f * c / a0;
+		lp_a[k][1] = (1.0f - alpha) / a0;
+	}
+	memset(lp_z, 0, sizeof(lp_z));
+	lp_hz = hz;
+	lp_speed = speed;
+}
+
+static void
+SDL_LowpassChunk(int count)
+{
+	int i, side, hz;
+
+	if (!s_lowpass)
+	{
+		s_lowpass = Cvar_Get("s_lowpass", "10000", CVAR_ARCHIVE);
+	}
+	hz = (int)s_lowpass->value;
+	if (hz <= 0 || hz * 2 >= sound.speed)
+	{
+		return;
+	}
+	if (hz != lp_hz || sound.speed != lp_speed)
+	{
+		SDL_LowpassSetup(hz, sound.speed);
+	}
+	for (side = 0; side < 2; side++)
+	{
+		int *p = side ? &paintbuffer[0].right : &paintbuffer[0].left;
+		float z00 = lp_z[0][side][0], z01 = lp_z[0][side][1];
+		float z10 = lp_z[1][side][0], z11 = lp_z[1][side][1];
+
+		for (i = 0; i < count; i++, p += 2)
+		{
+			float x = (float)*p, y;
+
+			y = lp_b[0][0] * x + z00;
+			z00 = lp_b[0][1] * x - lp_a[0][0] * y + z01;
+			z01 = lp_b[0][2] * x - lp_a[0][1] * y;
+			x = y;
+			y = lp_b[1][0] * x + z10;
+			z10 = lp_b[1][1] * x - lp_a[1][0] * y + z11;
+			z11 = lp_b[1][2] * x - lp_a[1][1] * y;
+			*p = (int)y;
+		}
+		/* silence decays towards denormals: cut them off */
+		lp_z[0][side][0] = fabsf(z00) < 1e-3f ? 0.0f : z00;
+		lp_z[0][side][1] = fabsf(z01) < 1e-3f ? 0.0f : z01;
+		lp_z[1][side][0] = fabsf(z10) < 1e-3f ? 0.0f : z10;
+		lp_z[1][side][1] = fabsf(z11) < 1e-3f ? 0.0f : z11;
+	}
+}
+#endif
+
 static void
 lpf_initialize(LpfContext* lpf_context, float gain_hf, int target_frequency)
 {
@@ -524,6 +609,10 @@ SDL_PaintChannels(int endtime)
 				}
 			}
 		}
+
+#ifdef MIYOO_MINI
+		SDL_LowpassChunk(end - paintedtime);	/* the effects only: the music comes below */
+#endif
 
 		if (lpf_is_enabled && snd_is_underwater)
 		{

@@ -52,8 +52,13 @@ In Quake II's own menu (START):
 - *Options → Video*: **max fps** (30 / 60 / unlimited; 30 by default), **show fps** (the
   counter at the top right), brightness, field of view, ui scale, texture filter. Each
   applies at once.
-- *Options*: volumes and music, always run, **auto aim** (on by default), crosshair and its
-  colour, customize gamepad, reset defaults.
+- *Options*: volumes and music, **sound filter**, always run, **auto aim** (on by default),
+  crosshair and its colour, customize gamepad, reset defaults.
+
+**Sound filter** gives the sound effects the softer sound of 1997. Quake II mixed its sound at
+11 kHz then (22 kHz on "high"), so the sharp edges of today's 48 kHz output never reached the
+speakers. The settings are *1997 high (10 kHz)*, the default, *1997 low (5 kHz)*, as the
+game's own default was, and *off*. The music isn't filtered: it came from the CD.
 
 Settings that do nothing on the Miyoo or don't work there (other renderers, video modes,
 mouse and keyboard settings) are hidden.

@@ -757,6 +757,21 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
       sounds): the declicker.
     - A moving source's volume jumps once a frame: volume ramps.
     - Fades around loads (to check).
+- **The sound filter, at 10 kHz by default** (2026-11-01 15:40, the owner's choice after
+  "the sound is rather sharp"). How Quake II sounded in 1997:
+  - Its own mixer mixed at 11 kHz by default (`s_khz 11`; the menu's "high" quality was
+    22 kHz), with sounds loaded as 8 bit (`s_loadas8bit 1`).
+  - It had the same nearest-sample resampling and hard clip as today.
+  - The music came from the CD, analogue, past the mixer.
+  - So nothing above ~5.5 / ~11 kHz reached the speakers. At 48 kHz the resampling's
+    images, sounds cut mid-wave and the 8-bit steps are audible.
+  - sdl.c `SDL_LowpassChunk` (`#ifdef MIYOO_MINI`) is tyrquake-miyoo's S_LowpassChunk: a
+    4th-order Butterworth (two biquads, Q 0.5412 and 1.3066, TDF-II) on the effects after
+    painting, before the music and Yamagi's underwater filter.
+  - cvar `s_lowpass` in Hz, default 10000 (1997's "high"); 0 = off.
+  - Options menu "sound filter": 1997 high (10 kHz) / 1997 low (5 kHz) / off.
+  - Cost, as in play with music, A B x3 in one build: off 57.3-57.9 / 55.3-55.7 fps, on
+    57.4-57.8 / 55.3-55.6 fps: within the noise. The card's main build is `build/miyoo_lp`.
 - **Where it stood (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
   play (+50 % / +64 %)**; at timedemo speed 67 / 60.5 fps. Pixel for pixel the same. The
   card's main build is `build/miyoo_s3c`.

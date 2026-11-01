@@ -2383,6 +2383,17 @@ AutoAimFunc(void *unused)
 {
 	Cvar_SetValue("autoaim", s_options_autoaim_box.curvalue);
 }
+
+/* Miyoo Mini: "sound filter" (s_lowpass, src/client/sound/sdl.c): the effects through a
+   low-pass as in 1997, when Quake II mixed at 22 kHz (high) or 11 kHz (low, its default). */
+static menulist_s s_options_soundfilter_box;
+static const int soundfilter_hz[] = { 10000, 5000, 0 };
+
+static void
+SoundFilterFunc(void *unused)
+{
+	Cvar_SetValue("s_lowpass", soundfilter_hz[s_options_soundfilter_box.curvalue]);
+}
 #endif
 
 static void
@@ -2394,6 +2405,11 @@ ControlsSetMenuItemValues(void)
 	s_options_alwaysrun_box.curvalue = (cl_run->value != 0);
 #ifdef MIYOO_MINI
 	s_options_autoaim_box.curvalue = (Cvar_Get("autoaim", "1", CVAR_ARCHIVE)->value != 0);
+	{
+		const int hz = (int)Cvar_Get("s_lowpass", "10000", CVAR_ARCHIVE)->value;
+
+		s_options_soundfilter_box.curvalue = hz <= 0 ? 2 : (hz <= 7500 ? 1 : 0);
+	}
 #endif
 	s_options_invertmouse_box.curvalue = (m_pitch->value < 0);
 	s_options_lookstrafe_box.curvalue = (lookstrafe->value != 0);
@@ -2720,6 +2736,22 @@ Options_MenuInit(void)
 	s_options_autoaim_box.generic.name = "auto aim";
 	s_options_autoaim_box.generic.callback = AutoAimFunc;
 	s_options_autoaim_box.itemnames = yesno_names;
+
+	{
+		static const char *soundfilter_names[] =
+		{
+			"1997 high (10 kHz)",
+			"1997 low (5 kHz)",
+			"off",
+			0
+		};
+
+		s_options_soundfilter_box.generic.type = MTYPE_SPINCONTROL;
+		s_options_soundfilter_box.generic.x = 0;
+		s_options_soundfilter_box.generic.name = "sound filter";
+		s_options_soundfilter_box.generic.callback = SoundFilterFunc;
+		s_options_soundfilter_box.itemnames = soundfilter_names;
+	}
 #endif
 
 	ControlsSetMenuItemValues();
@@ -2732,7 +2764,8 @@ Options_MenuInit(void)
 		void *items[] =
 		{
 			&s_options_sfxvolume_slider, &s_options_oggvolume_slider,
-			&s_options_oggenable_box, &s_options_oggshuffle_box, NULL,
+			&s_options_oggenable_box, &s_options_oggshuffle_box,
+			&s_options_soundfilter_box, NULL,
 			&s_options_alwaysrun_box, &s_options_autoaim_box,
 			&s_options_crosshair_box, &s_options_crosshair_color_box, NULL,
 			&s_options_customize_joy_action, &s_options_defaults_action
