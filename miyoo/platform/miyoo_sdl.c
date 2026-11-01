@@ -446,7 +446,7 @@ int SDL_RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect 
 }
 
 /* Screenshots for bit-exact comparisons of builds (miyoo/tools/bench.sh SHOTS=N,
- * miyoo/tools/shots_compare.py): MIYOO_SHOTS=N saves every Nth frame as
+ * tools-miyoo analysis/shots_compare.py): MIYOO_SHOTS=N saves every Nth frame as
  * <MIYOO_SHOTS_DIR>/NNNNN.argb, the frame as the renderer made it (w x h, 32-bit 0xAARRGGBB
  * little-endian). In a timedemo the number is the demo's own frame (Miyoo_DemoFrame, set by
  * cl_view.c: cl.timedemo_frames), the same moment of the demo in every run and build: counting
@@ -504,7 +504,7 @@ static void SaveShot(const SDL_Texture *t, unsigned k)
 	}
 }
 
-/* Frame times for stutter checks (miyoo/tools/bench.sh FRAMES=1, miyoo/tools/frametimes.py):
+/* Frame times for stutter checks (miyoo/tools/bench.sh FRAMES=1, tools-miyoo analysis/frametimes.py):
  * MIYOO_FRAMES=file writes the time from each present to the next, in microseconds, one per
  * line, kept in memory and written at exit (no file writes while it runs). */
 #define FRAMES_MAX 20000

@@ -13,7 +13,8 @@
  * When the frames are done the samples go to the file as "pc lr thread count" lines after
  * "# thread <tid> <name>" lines, and then (added here, for the renderer and the game, which are
  * shared libraries) the process's code mappings as "# map <start> <end> <offset> <path>" lines.
- * miyoo/tools/prof_map.py maps them to functions with the unstripped builds. */
+ * tools-miyoo's analysis/prof_map.py (G:\Emulacja\tools-miyoo) maps them to functions with
+ * the unstripped builds. */
 
 #include <dirent.h>
 #include <signal.h>

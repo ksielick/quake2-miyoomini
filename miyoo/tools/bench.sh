@@ -12,12 +12,12 @@
 # "N frames, S seconds: F fps" is the result; the clock, temperature and battery are noted.
 # EXTRA: more console settings for every run (e.g. EXTRA="+set sw_drawflat 1").
 # BINDIR: run another build's quake2 and ref_soft.so from that directory (e.g. $GAME/test_o3).
-# FRAMES=1: each frame's time to /tmp/q2frames_<FRAMESET>_<demo>.txt (miyoo/tools/frametimes.py).
+# FRAMES=1: each frame's time to /tmp/q2frames_<FRAMESET>_<demo>.txt (tools-miyoo analysis/frametimes.py).
 # SHOTS=N: every Nth frame saved to <game>/shots/<SET>/<demo>/NNNNN.argb (SET default "new"),
-# for miyoo/tools/shots_compare.py on the PC (fetch them over SMB: Roms\PORTS\Games\Quake2\shots).
+# for tools-miyoo analysis/shots_compare.py on the PC (fetch them over SMB: Roms\PORTS\Games\Quake2\shots).
 # The shots cost time: such runs are not timings.
 # PROF=first,count: a profile of those frames of each demo (miyoo/platform/miyoo_prof.c) to
-# <game>/prof_<demo>.txt; map it on the PC with miyoo/tools/prof_map.py.
+# <game>/prof_<demo>.txt; map it on the PC with tools-miyoo analysis/prof_map.py.
 GAME=/mnt/SDCARD/Roms/PORTS/Games/Quake2
 OUT=/tmp/q2bench.txt
 DEMOS=${*:-demo1 demo2}

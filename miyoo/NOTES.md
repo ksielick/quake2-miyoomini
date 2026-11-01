@@ -16,7 +16,11 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
     "Merge pull request #1384"), 8.70 era.
 - Commit as `ksielick <153522713+ksielick@users.noreply.github.com>` (set in the repo config).
 - Tools shared with the other Miyoo projects:
-  - `mssh`/`mscp`/`mshot.sh` are in `G:\Emulacja\redriver2-miyoo\repos\REDRIVER2\miyoo\tools\`.
+  - Since 2026-11-01 they are in `G:\Emulacja\tools-miyoo` (private repo ksielick/tools-miyoo):
+    - `device/` holds `mssh`, `mscp` and `mshot.sh`.
+    - `analysis/` holds `shots_compare.py`, `frametimes.py` and `prof_map.py`; they were in
+      `miyoo/tools/`, which the entries below still name.
+    - `prof_map.py` now takes the binaries themselves: `py -3 G:/Emulacja/tools-miyoo/analysis/prof_map.py prof.txt build/miyoo/quake2.unstripped build/miyoo/ref_soft.so.unstripped build/miyoo/baseq2/game.so.unstripped`.
   - The toolchain is Arm GNU 13.3 (`arm-none-linux-gnueabihf`) in
     `G:\Emulacja\redriver2-miyoo\deps\`.
 
