@@ -383,7 +383,14 @@ InitGame(void)
 	sv_maplist = gi.cvar("sv_maplist", "", 0);
 
 	/* others */
+#ifdef MIYOO_MINI
+	/* no mouse and no stick there: the crosshair hits, and a light vertical auto aim */
+	aimfix = gi.cvar("aimfix", "1", CVAR_ARCHIVE);
+	autoaim = gi.cvar("autoaim", "1", CVAR_ARCHIVE);
+#else
 	aimfix = gi.cvar("aimfix", "0", CVAR_ARCHIVE);
+	autoaim = gi.cvar("autoaim", "0", CVAR_ARCHIVE);
+#endif
 	g_machinegun_norecoil = gi.cvar("g_machinegun_norecoil", "0", CVAR_ARCHIVE);
 	g_quick_weap = gi.cvar("g_quick_weap", "1", CVAR_ARCHIVE);
 	g_swap_speed = gi.cvar("g_swap_speed", "1", CVAR_ARCHIVE);

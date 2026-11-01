@@ -99,6 +99,8 @@ MiyooShowFpsCallback(void *unused)
 {
 	Cvar_SetValue("cl_showfps", s_miyoo_showfps_list.curvalue);
 }
+
+static void MiyooUiScaleCallback(void *unused);
 #endif
 
 // --------
@@ -460,6 +462,29 @@ ApplyChanges(void *unused)
 
 	M_ForceMenuOff();
 }
+
+#ifdef MIYOO_MINI
+/* ApplyChanges' UI scaling, at once (no "apply" on the Miyoo) */
+static void
+MiyooUiScaleCallback(void *unused)
+{
+	if (s_uiscale_list.curvalue == 0)
+	{
+		Cvar_SetValue("r_hudscale", -1);
+	}
+	else if (s_uiscale_list.curvalue < GetCustomValue(&s_uiscale_list))
+	{
+		Cvar_SetValue("r_hudscale", s_uiscale_list.curvalue);
+	}
+
+	if (s_uiscale_list.curvalue != GetCustomValue(&s_uiscale_list))
+	{
+		Cvar_SetValue("r_consolescale", r_hudscale->value);
+		Cvar_SetValue("r_menuscale", r_hudscale->value);
+		Cvar_SetValue("crosshair_scale", r_hudscale->value);
+	}
+}
+#endif
 
 static void
 RestartNeededSDL3Msg(void *unused)
@@ -855,6 +880,10 @@ VID_MenuInit(void)
 	}
 #endif
 
+#ifdef MIYOO_MINI
+	s_uiscale_list.generic.callback = MiyooUiScaleCallback;
+#endif
+
 	s_af_list.generic.type = MTYPE_SPINCONTROL;
 	s_af_list.generic.name = "aniso filtering";
 	s_af_list.generic.x = 0;
@@ -946,6 +975,33 @@ VID_MenuInit(void)
 	s_apply_action.generic.x = 0;
 	s_apply_action.generic.y = (y += 10);
 	s_apply_action.generic.callback = ApplyChanges;
+
+#ifdef MIYOO_MINI
+	/* Miyoo Mini: only what works there, and each applies at once (so no "apply" or
+	   "reset to default"). The software renderer is the only one, 640x480 the panel's mode
+	   (the launcher sets it), no window, and no OpenGL options (aniso filtering,
+	   multisampling). */
+	{
+		void *items[] =
+		{
+			&s_brightness_slider, &s_fov_slider, &s_uiscale_list,
+			&s_miyoo_maxfps_list, &s_miyoo_showfps_list, &s_filter_list
+		};
+
+		y = 0;
+		for (int i = 0; i < (int)ARRLEN(items); i++)
+		{
+			((menucommon_s *)items[i])->y = y;
+			y += 10;
+			Menu_AddItem(&s_opengl_menu, items[i]);
+		}
+
+		Menu_SetStatusBar(&s_opengl_menu, NULL);
+		Menu_Center(&s_opengl_menu);
+		s_opengl_menu.x -= 8;
+		return;
+	}
+#endif
 
 	Menu_AddItem(&s_opengl_menu, (void *)&s_renderer_list);
 	Menu_AddItem(&s_opengl_menu, (void *)&s_mode_list);

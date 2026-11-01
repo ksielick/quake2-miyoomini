@@ -44,6 +44,84 @@ static byte is_silenced;
 
 static void weapon_grenade_fire(edict_t *ent, qboolean held);
 
+/*
+ * Light vertical auto aim ("autoaim" cvar), as Quake 1's PF_aim with its sv_aim 0.93:
+ * when the line of sight hits no monster, the living monster whose centre is nearest
+ * the crosshair (within acos(0.93), ~22 degrees) and in clear sight gets the shot's
+ * pitch; the heading stays the player's. Single player and coop only, never players.
+ */
+#define AUTOAIM_COS 0.93f
+
+static void
+P_AutoAim(edict_t *ent, vec3_t forward)
+{
+	vec3_t start, end, dir;
+	edict_t *check, *best = NULL;
+	float bestdist = AUTOAIM_COS;
+	trace_t tr;
+	int i;
+
+	if (!autoaim || !autoaim->value || deathmatch->value)
+	{
+		return;
+	}
+
+	VectorSet(start, ent->s.origin[0], ent->s.origin[1], ent->s.origin[2] + ent->viewheight);
+	VectorMA(start, 2048, forward, end);
+	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
+	if (tr.ent && (tr.ent->svflags & SVF_MONSTER) && tr.ent->takedamage)
+	{
+		return;	/* already on one */
+	}
+
+	for (i = 1; i < globals.num_edicts; i++)
+	{
+		float dist;
+
+		check = &g_edicts[i];
+		if (!check->inuse || !(check->svflags & SVF_MONSTER) ||
+			!check->takedamage || check->health <= 0 || check->deadflag)
+		{
+			continue;
+		}
+
+		VectorAdd(check->absmin, check->absmax, end);
+		VectorScale(end, 0.5f, end);
+		VectorSubtract(end, start, dir);
+		if (VectorLength(dir) > 2048)
+		{
+			continue;
+		}
+		VectorNormalize(dir);
+		dist = DotProduct(dir, forward);
+		if (dist < bestdist)
+		{
+			continue;
+		}
+
+		tr = gi.trace(start, NULL, NULL, end, ent, MASK_SHOT);
+		if (tr.ent == check)
+		{
+			bestdist = dist;
+			best = check;
+		}
+	}
+
+	if (best)
+	{
+		float dist;
+
+		VectorAdd(best->absmin, best->absmax, end);
+		VectorScale(end, 0.5f, end);
+		VectorSubtract(end, start, dir);
+		dist = DotProduct(dir, forward);
+		VectorScale(forward, dist, end);
+		end[2] = dir[2];
+		VectorNormalize(end);
+		VectorCopy(end, forward);
+	}
+}
+
 static void
 P_ProjectSource(edict_t *ent, vec3_t distance,
 		vec3_t forward, vec3_t right, vec3_t result)
@@ -56,6 +134,8 @@ P_ProjectSource(edict_t *ent, vec3_t distance,
 	{
 		return;
 	}
+
+	P_AutoAim(ent, forward);
 
 	VectorCopy(distance, _distance);
 
@@ -1686,6 +1766,13 @@ weapon_supershotgun_fire(edict_t *ent)
 	}
 
 	v[PITCH] = ent->client->v_angle[PITCH];
+	if (autoaim->value && !aimfix->value)
+	{
+		/* both barrels at the pitch P_ProjectSource's auto aim chose */
+		vec3_t aimed;
+		vectoangles(forward, aimed);
+		v[PITCH] = aimed[PITCH];
+	}
 	v[YAW] = ent->client->v_angle[YAW] - 5;
 	v[ROLL] = ent->client->v_angle[ROLL];
 	AngleVectors(v, forward, NULL, NULL);

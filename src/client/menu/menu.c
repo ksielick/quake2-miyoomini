@@ -2372,6 +2372,19 @@ FreeLookFunc(void *unused)
 	Cvar_SetValue("freelook", s_options_freelook_box.curvalue);
 }
 
+#ifdef MIYOO_MINI
+/* Miyoo Mini: "auto aim" (the game's light vertical auto aim, src/game/player/weapon.c
+   P_AutoAim; on by default, as Quake 1's sv_aim). The cvar is made here too, so the menu
+   shows its default before a game has started. */
+static menulist_s s_options_autoaim_box;
+
+static void
+AutoAimFunc(void *unused)
+{
+	Cvar_SetValue("autoaim", s_options_autoaim_box.curvalue);
+}
+#endif
+
 static void
 ControlsSetMenuItemValues(void)
 {
@@ -2379,6 +2392,9 @@ ControlsSetMenuItemValues(void)
 	s_options_oggenable_box.curvalue = (Cvar_VariableValue("ogg_enable") != 0);
 	s_options_quality_list.curvalue = (Cvar_VariableValue("s_openal") == 0);
 	s_options_alwaysrun_box.curvalue = (cl_run->value != 0);
+#ifdef MIYOO_MINI
+	s_options_autoaim_box.curvalue = (Cvar_Get("autoaim", "1", CVAR_ARCHIVE)->value != 0);
+#endif
 	s_options_invertmouse_box.curvalue = (m_pitch->value < 0);
 	s_options_lookstrafe_box.curvalue = (lookstrafe->value != 0);
 	s_options_freelook_box.curvalue = (freelook->value != 0);
@@ -2698,7 +2714,49 @@ Options_MenuInit(void)
 	s_options_console_action.generic.name = "go to console";
 	s_options_console_action.generic.callback = ConsoleFunc;
 
+#ifdef MIYOO_MINI
+	s_options_autoaim_box.generic.type = MTYPE_SPINCONTROL;
+	s_options_autoaim_box.generic.x = 0;
+	s_options_autoaim_box.generic.name = "auto aim";
+	s_options_autoaim_box.generic.callback = AutoAimFunc;
+	s_options_autoaim_box.itemnames = yesno_names;
+#endif
+
 	ControlsSetMenuItemValues();
+
+#ifdef MIYOO_MINI
+	/* Miyoo Mini: only what works there. No mouse or keyboard (mouse speed, invert mouse,
+	   lookstrafe, free look, customize controls, the console), and only the SDL sound
+	   backend (no OpenAL). NULL = a blank line. */
+	{
+		void *items[] =
+		{
+			&s_options_sfxvolume_slider, &s_options_oggvolume_slider,
+			&s_options_oggenable_box, &s_options_oggshuffle_box, NULL,
+			&s_options_alwaysrun_box, &s_options_autoaim_box,
+			&s_options_crosshair_box, &s_options_crosshair_color_box, NULL,
+			&s_options_customize_joy_action, &s_options_defaults_action
+		};
+
+		y = 0;
+		for (int i = 0; i < (int)ARRLEN(items); i++)
+		{
+			if (!items[i])
+			{
+				y += 10;
+				continue;
+			}
+			if (items[i] == &s_options_customize_joy_action && !show_gamepad)
+			{
+				continue;
+			}
+			((menucommon_s *)items[i])->y = y;
+			y += 10;
+			Menu_AddItem(&s_options_menu, items[i]);
+		}
+		return;
+	}
+#endif
 
 	Menu_AddItem(&s_options_menu, (void *)&s_options_sfxvolume_slider);
 

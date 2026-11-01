@@ -210,6 +210,53 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
   - Note: Yamagi's main loop spins between frames by default (`busywait 1`, 5 µs steps);
     with the panel pacing the frames the game thread waits in the present instead, so it
     spins little. `busywait 0` would sleep, and sleeps last >= 10 ms on this kernel.
+- **2026-11-01: controls as TyrQuake-Miyoo, auto aim, menus trimmed** (owner's choices after
+  a comparison with the 1999 PlayStation port).
+  - Comparison: the PS1 port's digital pad layout was D-pad move/turn, L1/R1 look, L2/R2
+    strafe, X (bottom) fire, triangle/circle next/previous weapon; its analogue layouts were
+    criticised ("tank controls"). No auto aim is known in it. PC Quake II has none either
+    (`aimfix` only removes the drift from the gun's offset); Quake 1 has `sv_aim` 0.93,
+    which TyrQuake keeps.
+  - The buttons are now **one SDL game controller** (`miyoo_sdl.c` PadButton), not PC keys:
+    Yamagi treats left and right Ctrl as one key, so B and SELECT had been the same key. As a
+    Nintendo Switch type controller Yamagi names the buttons A/B/X/Y as printed on the Miyoo,
+    A confirms and B goes back in the menus, and Options shows "customize gamepad". L2/R2 are
+    the trigger axes, MENU stays Escape (Onion integration later).
+  - Layout (`miyoo/card/.../baseq2/yq2.cfg`, run after default.cfg at start and on "reset
+    defaults"): TyrQuake's RetroArch "classic" layout one to one: D-pad forward/back/turn,
+    B jump, A next weapon, Y fire, L1/R1 strafe, L2/R2 look up/down, START menu; but X =
+    crouch (TyrQuake: hold to look with the D-pad). SELECT held (Yamagi's
+    `+joyaltselector`): D-pad left/right previous/next item, up show inventory, down use item;
+    A previous weapon, B help computer, X walk/run (`toggle cl_run`); fire, strafe and look
+    work as usual. `cl_run 1` by default (TyrQuake's SELECT toggles walking).
+  - **Auto aim** (`src/game/player/weapon.c` P_AutoAim, called from P_ProjectSource): Quake
+    1's PF_aim with sv_aim 0.93: when the line of sight hits no monster, the living monster in
+    clear sight whose centre is nearest the crosshair (within ~22°) gets the shot's pitch; the
+    heading stays. Not in deathmatch, never at players. Cvar `autoaim` (1 on the Miyoo), in
+    Options as "auto aim". `aimfix 1` on the Miyoo. Demos replay without the game code, so
+    timedemos and shots don't change. TODO: rogue and xatrix have their own game.so.
+  - Menus (`#ifdef MIYOO_MINI`): Video keeps brightness, field of view, ui scale (now at
+    once), max fps, show fps, texture filter; hidden: renderer, video mode, fullscreen, aniso
+    filtering, multisampling, apply, reset (nothing left needs apply). Options keeps the
+    volumes and music, always run, auto aim, crosshair and its colour, customize gamepad,
+    reset defaults; hidden: sound backend (no OpenAL), mouse speed, invert mouse, lookstrafe,
+    free look, customize controls (keyboard), go to console (no keyboard).
+  - The card's config.cfg (from the first runs) began with `unbindall` and keyboard binds,
+    which would have undone yq2.cfg's: its bind lines removed, and its old `aimfix 0` and
+    `cl_run 0` set to 1 (backup in `backup/2026-11-01-controls/`, not in git). Checked on
+    the device: "1 joysticks were found ... 'Miyoo Mini Plus' ... Enabled as Game Controller",
+    and the game saved the pad binds to config.cfg.
+  - Quake splits commands at `;` in .cfg comments too ("Unknown command" in the log):
+    no semicolons in yq2.cfg's comments.
+- **Texture filter (Video -> texture filter, `sw_texture_filtering`) on/off, 2026-11-01
+  09:50** (`miyoo/tools/bench_ab.sh`, 1200 MHz, 74-79 °C, charging at 50 %):
+
+  | | demo1 | demo2 |
+  |---|---|---|
+  | off | 38.8 fps | 33.6 fps |
+  | on | 38.1 fps (-1.8 %) | 33.4 fps (-0.6 %) |
+
+  Cheap: the menu item stays, default off (Yamagi's default).
 - Game data for tests on the PC: `G:\Emulacja\Quake2\` (outside the repo, never commit it):
   the owner's GOG "Quake II - Quad Damage" 2.0.0.3, extracted with innoextract
   (`G:\Emulacja\dethrace-miyoo\deps\innoextract`, `-I baseq2 -I music -I rogue -I xatrix

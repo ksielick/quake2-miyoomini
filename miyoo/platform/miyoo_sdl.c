@@ -81,29 +81,40 @@ static void PushEvent(const SDL_Event *e)
 	s_eventCount++;
 }
 
-/* a Linux key code of the Miyoo's buttons as the PC key: its scancode and keycode */
-static int LinuxKey(int code, SDL_Scancode *sc, SDL_Keycode *kc)
+/* The Miyoo's buttons are one game controller, a Nintendo-style one (Yamagi then names the
+ * buttons A/B/X/Y as printed on the Miyoo, and A confirms in the menus). SDL's buttons are
+ * positions: SDL_CONTROLLER_BUTTON_A is the bottom one (the Miyoo's B), B the right one (A),
+ * X the left one (Y), Y the top one (X). L2/R2 are the triggers (axes). Only MENU stays a
+ * key: Escape. (Before, all the buttons were PC keys: but Yamagi has one Ctrl key for both
+ * left and right Ctrl, so B and SELECT were the same key; and the controller gives Yamagi's
+ * gamepad menus, button names and its alternative bindings while SELECT is held.) */
+enum { PAD_NONE = -1, PAD_TRIG_LEFT = 100, PAD_TRIG_RIGHT };
+
+static int PadButton(int code)
 {
 	switch (code)
 	{
-	case KEY_UP:		*sc = SDL_SCANCODE_UP;			*kc = SDLK_UP;			return 1;
-	case KEY_DOWN:		*sc = SDL_SCANCODE_DOWN;		*kc = SDLK_DOWN;		return 1;
-	case KEY_LEFT:		*sc = SDL_SCANCODE_LEFT;		*kc = SDLK_LEFT;		return 1;
-	case KEY_RIGHT:		*sc = SDL_SCANCODE_RIGHT;		*kc = SDLK_RIGHT;		return 1;
-	case KEY_SPACE:		*sc = SDL_SCANCODE_SPACE;		*kc = SDLK_SPACE;		return 1;	/* A */
-	case KEY_LEFTCTRL:	*sc = SDL_SCANCODE_LCTRL;		*kc = SDLK_LCTRL;		return 1;	/* B */
-	case KEY_LEFTSHIFT:	*sc = SDL_SCANCODE_LSHIFT;		*kc = SDLK_LSHIFT;		return 1;	/* X */
-	case KEY_LEFTALT:	*sc = SDL_SCANCODE_LALT;		*kc = SDLK_LALT;		return 1;	/* Y */
-	case KEY_E:			*sc = SDL_SCANCODE_E;			*kc = SDLK_e;			return 1;	/* L1 */
-	case KEY_T:			*sc = SDL_SCANCODE_T;			*kc = SDLK_t;			return 1;	/* R1 */
-	case KEY_TAB:		*sc = SDL_SCANCODE_TAB;			*kc = SDLK_TAB;			return 1;	/* L2 */
-	case KEY_BACKSPACE:	*sc = SDL_SCANCODE_BACKSPACE;	*kc = SDLK_BACKSPACE;	return 1;	/* R2 */
-	case KEY_RIGHTCTRL:	*sc = SDL_SCANCODE_RCTRL;		*kc = SDLK_RCTRL;		return 1;	/* SELECT */
-	case KEY_ENTER:		*sc = SDL_SCANCODE_RETURN;		*kc = SDLK_RETURN;		return 1;	/* START */
-	case KEY_ESC:		*sc = SDL_SCANCODE_ESCAPE;		*kc = SDLK_ESCAPE;		return 1;	/* MENU */
+	case KEY_UP:		return SDL_CONTROLLER_BUTTON_DPAD_UP;
+	case KEY_DOWN:		return SDL_CONTROLLER_BUTTON_DPAD_DOWN;
+	case KEY_LEFT:		return SDL_CONTROLLER_BUTTON_DPAD_LEFT;
+	case KEY_RIGHT:		return SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
+	case KEY_LEFTCTRL:	return SDL_CONTROLLER_BUTTON_A;			/* B, bottom */
+	case KEY_SPACE:		return SDL_CONTROLLER_BUTTON_B;			/* A, right */
+	case KEY_LEFTALT:	return SDL_CONTROLLER_BUTTON_X;			/* Y, left */
+	case KEY_LEFTSHIFT:	return SDL_CONTROLLER_BUTTON_Y;			/* X, top */
+	case KEY_E:			return SDL_CONTROLLER_BUTTON_LEFTSHOULDER;	/* L1 */
+	case KEY_T:			return SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;	/* R1 */
+	case KEY_TAB:		return PAD_TRIG_LEFT;					/* L2 */
+	case KEY_BACKSPACE:	return PAD_TRIG_RIGHT;					/* R2 */
+	case KEY_RIGHTCTRL:	return SDL_CONTROLLER_BUTTON_BACK;		/* SELECT */
+	case KEY_ENTER:		return SDL_CONTROLLER_BUTTON_START;		/* START */
 	}
-	return 0;
+	return PAD_NONE;
 }
+
+#define PAD_JOYSTICK_ID 0
+static Uint8 s_padButtons[SDL_CONTROLLER_BUTTON_MAX];
+static Sint16 s_padTriggers[2];
 
 static void ReadButtons(void)
 {
@@ -117,19 +128,42 @@ static void ReadButtons(void)
 	{
 		for (i = 0; i < (int)(n / sizeof(ev[0])); i++)
 		{
-			SDL_Scancode sc;
-			SDL_Keycode kc;
+			const int down = ev[i].value != 0;
 			SDL_Event e;
+			int b;
 
 			if (ev[i].type != EV_KEY || ev[i].value == 2)	/* (2: auto-repeat) */
 				continue;
-			if (!LinuxKey(ev[i].code, &sc, &kc))
-				continue;
 			memset(&e, 0, sizeof(e));
-			e.type = ev[i].value ? SDL_KEYDOWN : SDL_KEYUP;
-			e.key.state = ev[i].value ? SDL_PRESSED : SDL_RELEASED;
-			e.key.keysym.scancode = sc;
-			e.key.keysym.sym = kc;
+			if (ev[i].code == KEY_ESC)	/* MENU */
+			{
+				e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+				e.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+				e.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+				e.key.keysym.sym = SDLK_ESCAPE;
+				PushEvent(&e);
+				continue;
+			}
+			b = PadButton(ev[i].code);
+			if (b == PAD_NONE)
+				continue;
+			if (b >= PAD_TRIG_LEFT)
+			{
+				const int t = b - PAD_TRIG_LEFT;
+				s_padTriggers[t] = down ? SDL_JOYSTICK_AXIS_MAX : 0;
+				e.type = SDL_CONTROLLERAXISMOTION;
+				e.caxis.which = PAD_JOYSTICK_ID;
+				e.caxis.axis = t ? SDL_CONTROLLER_AXIS_TRIGGERRIGHT : SDL_CONTROLLER_AXIS_TRIGGERLEFT;
+				e.caxis.value = s_padTriggers[t];
+			}
+			else
+			{
+				s_padButtons[b] = down;
+				e.type = down ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+				e.cbutton.which = PAD_JOYSTICK_ID;
+				e.cbutton.button = b;
+				e.cbutton.state = down ? SDL_PRESSED : SDL_RELEASED;
+			}
 			PushEvent(&e);
 		}
 	}
@@ -457,16 +491,21 @@ void SDL_RenderPresent(SDL_Renderer *renderer)
 	MiyooFb_Present(s_shown->px, s_shown->w, s_shown->h, s_shown->w);
 }
 
-/* ---- joysticks, game controllers, haptics: none (the buttons are the keyboard) */
+/* ---- joysticks, game controllers: one, the Miyoo's buttons (see PadButton); no haptics */
 
-int SDL_NumJoysticks(void) { return 0; }
-SDL_Joystick *SDL_JoystickOpen(int device_index) { return NULL; }
+struct _SDL_Joystick { int id; };
+struct _SDL_GameController { int id; };
+static struct _SDL_Joystick s_padJoystick = { PAD_JOYSTICK_ID };
+static struct _SDL_GameController s_padController = { PAD_JOYSTICK_ID };
+
+int SDL_NumJoysticks(void) { return 1; }
+SDL_Joystick *SDL_JoystickOpen(int device_index) { return device_index == 0 ? &s_padJoystick : NULL; }
 void SDL_JoystickClose(SDL_Joystick *joystick) {}
-const char *SDL_JoystickName(SDL_Joystick *joystick) { return NULL; }
-int SDL_JoystickNumAxes(SDL_Joystick *joystick) { return 0; }
-int SDL_JoystickNumButtons(SDL_Joystick *joystick) { return 0; }
+const char *SDL_JoystickName(SDL_Joystick *joystick) { return "Miyoo Mini Plus"; }
+int SDL_JoystickNumAxes(SDL_Joystick *joystick) { return 2; }
+int SDL_JoystickNumButtons(SDL_Joystick *joystick) { return 12; }
 int SDL_JoystickNumHats(SDL_Joystick *joystick) { return 0; }
-SDL_JoystickID SDL_JoystickInstanceID(SDL_Joystick *joystick) { return -1; }
+SDL_JoystickID SDL_JoystickInstanceID(SDL_Joystick *joystick) { return joystick ? joystick->id : -1; }
 
 SDL_JoystickGUID SDL_JoystickGetDeviceGUID(int device_index)
 {
@@ -481,12 +520,21 @@ void SDL_JoystickGetGUIDString(SDL_JoystickGUID guid, char *pszGUID, int cbGUID)
 		pszGUID[0] = 0;
 }
 
-SDL_bool SDL_IsGameController(int joystick_index) { return SDL_FALSE; }
-SDL_GameController *SDL_GameControllerOpen(int joystick_index) { return NULL; }
+SDL_bool SDL_IsGameController(int joystick_index) { return joystick_index == 0 ? SDL_TRUE : SDL_FALSE; }
+SDL_GameController *SDL_GameControllerOpen(int joystick_index) { return joystick_index == 0 ? &s_padController : NULL; }
 void SDL_GameControllerClose(SDL_GameController *gamecontroller) {}
-SDL_Joystick *SDL_GameControllerGetJoystick(SDL_GameController *gamecontroller) { return NULL; }
+SDL_Joystick *SDL_GameControllerGetJoystick(SDL_GameController *gamecontroller) { return gamecontroller ? &s_padJoystick : NULL; }
 char *SDL_GameControllerMapping(SDL_GameController *gamecontroller) { return NULL; }
-SDL_GameControllerType SDL_GameControllerGetType(SDL_GameController *gamecontroller) { return SDL_CONTROLLER_TYPE_UNKNOWN; }
+SDL_GameControllerType SDL_GameControllerGetType(SDL_GameController *gamecontroller) { return SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO; }
+Uint8 SDL_GameControllerGetButton(SDL_GameController *gamecontroller, SDL_GameControllerButton button)
+{
+	return (unsigned)button < SDL_CONTROLLER_BUTTON_MAX ? s_padButtons[button] : 0;
+}
+Sint16 SDL_GameControllerGetAxis(SDL_GameController *gamecontroller, SDL_GameControllerAxis axis)
+{
+	return axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? s_padTriggers[0] :
+		axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT ? s_padTriggers[1] : 0;
+}
 SDL_bool SDL_GameControllerHasLED(SDL_GameController *gamecontroller) { return SDL_FALSE; }
 SDL_bool SDL_GameControllerHasRumble(SDL_GameController *gamecontroller) { return SDL_FALSE; }
 SDL_bool SDL_GameControllerHasSensor(SDL_GameController *gamecontroller, SDL_SensorType type) { return SDL_FALSE; }
