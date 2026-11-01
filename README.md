@@ -1,86 +1,103 @@
-# Yamagi Quake II
+# Quake II for the Miyoo Mini Plus
 
-Yamagi Quake II is an enhanced client for id Software's Quake II with
-focus on offline and coop gameplay. Both the gameplay and the graphics
-are unchanged, but many bugs in the last official release were fixed and
-some nice to have features like widescreen support, reliable support for
-high framerates, a modern sound backend based upon OpenAL, support for
-modern game controllers and a modern OpenGL 3.2 renderer were added.
-Unlike most other Quake II source ports Yamagi Quake II is fully 64-bit
-clean. It works perfectly on modern processors and operating systems.
+Quake II on the **Miyoo Mini Plus** with [OnionOS](https://github.com/OnionUI/Onion), at the
+screen's full **640x480**, on the console's stock clock: **no overclocking**. It is
+[Yamagi Quake II](https://github.com/yquake2/yquake2) with its software renderer, made to run
+straight on the console (no RetroArch), and started from Onion's **Ports** list.
 
-This code is built upon Icculus Quake II, which itself is based on Quake
-II 3.21. Yamagi Quake II is released under the terms of the GPL version
-2. See LICENSE for further information:
+**Work in progress.** It plays, with sound, but there is no release zip yet. It will come with
+[Port Manager](https://github.com/ksielick/portmanager-miyoo). Speed work is going on (see
+below).
 
-* [LICENSE](https://github.com/yquake2/yquake2/blob/master/LICENSE)
+- **640x480 at a steady 30 fps** by default: every frame stays on the screen for exactly two
+  of the panel's refreshes, so movement is even. 60 fps and "unlimited" are in the video menu.
+- **Made for the buttons.** The same layout as [TyrQuake-Miyoo](https://github.com/ksielick/tyrquake-miyoo),
+  with a light auto aim, since there's no mouse or stick to aim with.
+- **The picture stays as Quake II drew it.** Every speed-up is checked pixel for pixel.
 
-Officially supported operating systems are:
+## Buttons
 
-* FreeBSD
-* Linux
-* Windows
+| Button | In the game | In the menus |
+|---|---|---|
+| D-pad up / down | walk forward / back | move up / down |
+| D-pad left / right | turn left / right | change the setting |
+| **Y** | fire | |
+| **B** | jump (in water: swim up) | back |
+| **X** | crouch (in water: swim down) | delete |
+| **A** | next weapon | confirm |
+| **L1 / R1** | strafe left / right | change the setting |
+| **L2 / R2** | look up / down | |
+| **START** | menu (pause) | close the menu |
+| **MENU** | menu (pause); Onion's Game Switcher later | |
 
-Beside theses Yamagi Quake II has community support for MacOS and most
-other unixoid operating systems, including NetBSD, OpenBSD and Solaris.
+**Hold SELECT** for the second set:
 
+| Button | With SELECT held |
+|---|---|
+| D-pad left / right | previous / next item in the inventory |
+| D-pad up | show / hide the inventory |
+| D-pad down | use the item |
+| **A** | previous weapon |
+| **B** | help computer: your mission objectives (the scores in deathmatch) |
+| **X** | walk / run (you run by default) |
+| Y, L1, R1, L2, R2 | as without SELECT: fire, strafe and look still work |
 
-## Addons and partner projects
+The buttons can be changed in *Options → customize gamepad*; *Options → reset defaults*
+brings this layout back.
 
-This repository contains Yamagi Quake II itself. The official addons
-have their own repositories:
+## Settings
 
-* [The Reckoning](https://github.com/yquake2/xatrix)
-* [Ground Zero](https://github.com/yquake2/rogue)
-* [ThreeWave's Capture The Flag](https://github.com/yquake2/ctf)
+In Quake II's own menu (START):
 
-Yamagi Quake II Remaster is a project providing optional support for the
-assets of Quake II Remaster by Nightdive Studios and has a less
-conservative approach in regards to new features. It also lives in it's
-own repository:
+- *Options → Video*: **max fps** (30 / 60 / unlimited; 30 by default), **show fps** (the
+  counter at the top right), brightness, field of view, ui scale, texture filter. Each
+  applies at once.
+- *Options*: volumes and music, always run, **auto aim** (on by default), crosshair and its
+  colour, customize gamepad, reset defaults.
 
-* [Yamagi Quake II Remaster](https://github.com/yquake2/yquake2remaster)
+Settings that do nothing on the Miyoo or don't work there (other renderers, video modes,
+mouse and keyboard settings) are hidden.
 
+**Auto aim** works like Quake 1's: when the crosshair isn't on an enemy but one is close to it
+(within about 20°) and in sight, your shot goes up or down to it. It never turns you left or
+right, it is off in deathmatch, and it never aims at other players.
 
-## Development
+## Installing (by hand, until the release)
 
-Yamagi Quake II is a community driven project and lives from community
-involvement. Please report bugs in our issue tracker:
+You need OnionOS with its **Ports** list (Apps → Package Manager → Verified → Ports
+Collection) and your own Quake II data, which isn't included: `pak0.pak`, `pak1.pak` and
+`pak2.pak` from the full game's `baseq2` folder (GOG, Steam or the CD), or the demo's
+`pak0.pak`.
 
-* [Issue Tracker](https://github.com/yquake2/yquake2/issues)
+1. Put the port's files in `Roms/PORTS/Games/Quake2/` on the SD card (`quake2`,
+   `ref_soft.so`, `launch.sh`, `baseq2/game.so`, `baseq2/yq2.cfg`) and the shortcut
+   `Quake II.port` in `Roms/PORTS/Shortcuts/FPS/`.
+2. Copy your `pak` files into `Roms/PORTS/Games/Quake2/baseq2/`. Upper or lower case doesn't
+   matter.
+3. Play: *Games → Ports → FPS → Quake II*. If it doesn't show, refresh the list from its menu.
 
-We are always open to code contributions, no matter if they are small
-bugfixes or bigger features. However, Yamagi Quake II is a conservative
-project with big focus on stability and backward compatibility. We don't
-accept breaking changes. When in doubt please open an issue and ask if a
-contribution is welcome before putting too much work into it. Open a
-pull request to submit code:
+Music (optional, not tried on the Miyoo yet): the GOG version's `music` folder
+(`Track02.ogg` ...) next to `baseq2`, or in `baseq2/music/`.
 
-* [Pull Requests](https://github.com/yquake2/yquake2/pulls)
+Savegames and settings are kept in `Roms/PORTS/Games/Quake2/.yq2/`.
 
-Also have a look at our contributors guide:
+The mission packs (The Reckoning, Ground Zero) are not supported yet.
 
-* [Contributors Guide](https://github.com/yquake2/yquake2/blob/master/doc/080_contributing.md)
+## How fast
 
+Quake II's timedemos at 640x480 with no frame limit, average fps (stock 1200 MHz):
 
-## Documentation
+| Timedemo | Now |
+|---|---|
+| demo1 | 38.8 fps |
+| demo2 | 33.6 fps |
 
-Yamagi Quake II has rather extensive documentation covering all relevant
-areas from installation and configuration to package building. Have a
-look at the documentation index:
+So 30 fps holds in these demos, with room to spare. The work towards 60 fps (both CPU cores,
+as in TyrQuake-Miyoo) is planned in [miyoo/NOTES.md](miyoo/NOTES.md), with every result.
 
-* [Documentation Index](https://github.com/yquake2/yquake2/blob/master/doc/010_index.md)
+## Credits and license
 
-
-## Releases
-
-Yamagi Quake II releases at an irregular schedule. The official releases
-with source code tarballs and prebuild Windows binaries can be found at
-the homepage:
-
-* [Homepage](https://www.yamagi.org/quake2/)
-
-Our CI builds **unsupported** Linux, MacOS and Windows binaries at every
-commit. The artifacts can be found here:
-
-* [Github Actions](https://github.com/yquake2/yquake2/actions)
+Quake II is by id Software. [Yamagi Quake II](https://github.com/yquake2/yquake2) is by the
+Yamagi Quake II team (its own README: [README.yamagi.md](README.yamagi.md)). This port builds
+on their work and is GPL v2 like it (see [LICENSE](LICENSE)). Quake II's game data is not
+included.
