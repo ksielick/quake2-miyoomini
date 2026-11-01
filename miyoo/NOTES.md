@@ -390,9 +390,10 @@ shots against `build/shots/ref` (bit-exact, the owner's rule). Owner's order, 20
    for every span; versions per case. Model spans: the skin as pskin + t * skinwidth
    (TyrQuake). dethrace got 25 -> 38.6 fps from such specialisations.
 4. **Experiments that need the owner's yes**
-   - MI_GFX with an 8-bit palette source (I8 -> ARGB8888), if the SDK has it: the 8 -> 32
-     pass would leave the CPU and the picture would stay the same. Unknown: a short test.
-     (Owner: try it, with a way back. Done: see the results, +7 % / +5 %.)
+   - **Done (2026-11-01 11:00): MI_GFX converts the 8-bit frame (I8 -> ARGB8888).** The 8 ->
+     32 pass left the CPU; the picture is the same (0 pixels differ, shots identical); +7 % /
+     +5 %. `MIYOO_GFX_I8=0` is the way back. Details: results, step 4. (The owner's pick: try
+     it, with a way back.)
    - RGB565 output as TyrQuake (half the writes; colours lose their low bits: a visible
      change). **Owner: no, the game's look must not change** (2026-11-01).
    - A resolution option (480x360, 320x240, scaled by MI_GFX): a player's choice.
