@@ -78,6 +78,29 @@ static menulist_s s_filter_list;
 static menuaction_s s_defaults_action;
 static menuaction_s s_apply_action;
 
+#ifdef MIYOO_MINI
+/* Miyoo Mini: in place of "vertical sync" (the panel always paces the frames there), as
+   TyrQuake-Miyoo's Video Options; both apply at once.
+   max fps: 30 = each frame two of the panel's refreshes (29.83 fps), 60 = one (59.67),
+   unlimited = the game as fast as it can (vid_maxfps 30 / 60 / 300; miyoo/platform/miyoo_fb.c).
+   show fps: cl_showfps 0 / 1 / 2. */
+static menulist_s s_miyoo_maxfps_list;
+static menulist_s s_miyoo_showfps_list;
+
+static void
+MiyooMaxFpsCallback(void *unused)
+{
+	static const int values[] = { 30, 60, 300 };
+	Cvar_SetValue("vid_maxfps", values[s_miyoo_maxfps_list.curvalue]);
+}
+
+static void
+MiyooShowFpsCallback(void *unused)
+{
+	Cvar_SetValue("cl_showfps", s_miyoo_showfps_list.curvalue);
+}
+#endif
+
 // --------
 
 // gl1, gl3, gles1, gles3, gl4, vk, soft
@@ -806,6 +829,32 @@ VID_MenuInit(void)
 	s_vsync_list.itemnames = yesno_names;
 	s_vsync_list.curvalue = (r_vsync->value != 0);
 
+#ifdef MIYOO_MINI
+	{
+		static const char *maxfps_names[] = { "30", "60", "unlimited", NULL };
+		static const char *showfps_names[] = { "no", "yes", "detailed", NULL };
+		cvar_t *maxfps = Cvar_Get("vid_maxfps", "30", CVAR_ARCHIVE);
+		cvar_t *showfps = Cvar_Get("cl_showfps", "0", CVAR_ARCHIVE);
+
+		/* (in the vertical sync item's place) */
+		s_miyoo_maxfps_list.generic.type = MTYPE_SPINCONTROL;
+		s_miyoo_maxfps_list.generic.name = "max fps";
+		s_miyoo_maxfps_list.generic.x = 0;
+		s_miyoo_maxfps_list.generic.y = s_vsync_list.generic.y;
+		s_miyoo_maxfps_list.generic.callback = MiyooMaxFpsCallback;
+		s_miyoo_maxfps_list.itemnames = maxfps_names;
+		s_miyoo_maxfps_list.curvalue = maxfps->value <= 45 ? 0 : maxfps->value <= 100 ? 1 : 2;
+
+		s_miyoo_showfps_list.generic.type = MTYPE_SPINCONTROL;
+		s_miyoo_showfps_list.generic.name = "show fps";
+		s_miyoo_showfps_list.generic.x = 0;
+		s_miyoo_showfps_list.generic.y = (y += 10);
+		s_miyoo_showfps_list.generic.callback = MiyooShowFpsCallback;
+		s_miyoo_showfps_list.itemnames = showfps_names;
+		s_miyoo_showfps_list.curvalue = showfps->value < 1 ? 0 : showfps->value < 2 ? 1 : 2;
+	}
+#endif
+
 	s_af_list.generic.type = MTYPE_SPINCONTROL;
 	s_af_list.generic.name = "aniso filtering";
 	s_af_list.generic.x = 0;
@@ -931,7 +980,12 @@ VID_MenuInit(void)
 	}
 	Menu_AddItem(&s_opengl_menu, (void *)&s_uiscale_list);
 	Menu_AddItem(&s_opengl_menu, (void *)&s_fs_box);
+#ifdef MIYOO_MINI
+	Menu_AddItem(&s_opengl_menu, (void *)&s_miyoo_maxfps_list);
+	Menu_AddItem(&s_opengl_menu, (void *)&s_miyoo_showfps_list);
+#else
 	Menu_AddItem(&s_opengl_menu, (void *)&s_vsync_list);
+#endif
 	Menu_AddItem(&s_opengl_menu, (void *)&s_af_list);
 	Menu_AddItem(&s_opengl_menu, (void *)&s_msaa_list);
 	if (current_renderer == ref_gl3 || current_renderer == ref_gl1 || current_renderer == ref_soft)

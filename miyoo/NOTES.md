@@ -190,6 +190,26 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
     give `vid_colormap[pix + (light & LIGHTMASK)]` for every texel).
   - demo1 **38.0 fps** (was 33.7), demo2 **33.7 fps** (was 29.9): +13 %. Shots: 25/25
     identical to the reference.
+- **2026-11-01: max fps and show fps in the video menu, as TyrQuake-Miyoo** (owner's idea:
+  30 fps = half the panel's refresh).
+  - Video options (`src/client/menu/videomenu.c`, `#ifdef MIYOO_MINI`): "max fps" 30 / 60 /
+    unlimited (`vid_maxfps` 30 / 60 / 300) in place of "vertical sync", and "show fps" no /
+    yes / detailed (`cl_showfps` 0 / 1 / 2, Yamagi's own counter, top right). Both apply at
+    once. `vid_maxfps` defaults to 30 on the Miyoo (`src/common/frame.c`).
+  - `miyoo_fb.c`: at 30 the pan thread waits one more refresh (FBIO_WAITFORVSYNC, only that
+    thread) after showing a page, at 60 none; unlimited leaves out frames the panel can't take
+    yet (as `MIYOO_VSYNC=0`). `frame.c` passes `vid_maxfps` on every frame
+    (`MiyooFb_SetMaxFps`) and, at 30 and 60, lets the client render as soon as it may
+    (rfps = refresh x 1.2, as Yamagi does with vsync): its own clock at 30.0 would drift
+    against the panel's 29.83 (RR2 saw a 3-refresh frame every ~6 s that way).
+  - Measured (attract demos, 100 s): 29.8 fps, pages every 33.52 ms (= 2 x 16.76), longest
+    33.6 ms in play (longer only at demo changes), ~24 ms CPU per frame (was ~26-29
+    uncapped).
+  - The card's `.yq2/baseq2/config.cfg` from the first runs had `vid_maxfps "300"` (the old
+    default): set to 30 by hand. New installs get 30.
+  - Note: Yamagi's main loop spins between frames by default (`busywait 1`, 5 µs steps);
+    with the panel pacing the frames the game thread waits in the present instead, so it
+    spins little. `busywait 0` would sleep, and sleeps last >= 10 ms on this kernel.
 - Game data for tests on the PC: `G:\Emulacja\Quake2\` (outside the repo, never commit it):
   the owner's GOG "Quake II - Quad Damage" 2.0.0.3, extracted with innoextract
   (`G:\Emulacja\dethrace-miyoo\deps\innoextract`, `-I baseq2 -I music -I rogue -I xatrix

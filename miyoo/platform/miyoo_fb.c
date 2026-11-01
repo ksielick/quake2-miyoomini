@@ -233,12 +233,46 @@ static pthread_mutex_t s_panMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_panCond = PTHREAD_COND_INITIALIZER;
 static int s_panPending = -1;	/* the page to show, -1: none */
 
+/* Max FPS (the video menu's "max fps", vid_maxfps; MiyooFb_SetMaxFps), as TyrQuake-Miyoo's:
+ *   30: each page stays on the panel for two refreshes (29.83 fps): the pan thread waits for
+ *       one more refresh (FBIO_WAITFORVSYNC) after showing a page before the next frame may be
+ *       presented, so the game sleeps in the present and every frame is shown equally long
+ *       (redriver2-miyoo's PanThread: at 30.0 by the clock, a frame was shown for three
+ *       refreshes every ~6 s);
+ *   60: one refresh (59.67 fps at most);
+ *   unlimited: the game runs as fast as it can; a frame that comes while the last one still
+ *       waits for the panel is left out (as tqrun -V 0; also MIYOO_VSYNC=0, for timedemos).
+ * Only the pan thread waits for the panel: the driver wakes one waiter per refresh, a second
+ * thread waiting at the same time sleeps for good. */
+static volatile int s_hold = 2;		/* refreshes per frame: 2, 1, or 0 = unlimited */
+static int s_holdWorks = 1;			/* FBIO_WAITFORVSYNC answered */
+
+void MiyooFb_SetMaxFps(float fps)
+{
+	const int hold = fps <= 45.0f ? 2 : fps <= 100.0f ? 1 : 0;
+	if (hold != s_hold)
+	{
+		s_hold = hold;
+		fprintf(stderr, "miyoo: max fps %g: %s\n", fps,
+			hold == 2 ? "each frame two refreshes" : hold == 1 ? "each frame one refresh" : "unlimited");
+	}
+}
+
+/* the pans (Stats): the time between pages shown, its largest */
+static double s_panIntSum, s_panIntMax, s_panLast;
+static int s_panInts;
+
+static double NowMs(void);
+
 static void *PanThread(void *arg)
 {
 	(void)arg;
 	prctl(PR_SET_NAME, "fb_pan");
 	for (;;)
 	{
+		int i;
+		double t;
+
 		pthread_mutex_lock(&s_panMutex);
 		while (s_panPending < 0)
 			pthread_cond_wait(&s_panCond, &s_panMutex);
@@ -247,8 +281,29 @@ static void *PanThread(void *arg)
 
 		s_var.yoffset = page * s_h;
 		ioctl(s_fd, FBIOPAN_DISPLAY, &s_var);
+		t = NowMs();
+
+		/* (shown from this refresh on: held for the others) */
+		for (i = 1; i < s_hold && s_holdWorks; i++)
+		{
+			unsigned int zero = 0;
+			if (ioctl(s_fd, FBIO_WAITFORVSYNC, &zero) != 0)
+			{
+				fprintf(stderr, "miyoo: no FBIO_WAITFORVSYNC: pages not held\n");
+				s_holdWorks = 0;
+			}
+		}
 
 		pthread_mutex_lock(&s_panMutex);
+		if (s_panLast > 0)
+		{
+			const double d = t - s_panLast;
+			s_panIntSum += d;
+			if (d > s_panIntMax)
+				s_panIntMax = d;
+			s_panInts++;
+		}
+		s_panLast = t;
 		s_page = page;
 		s_panPending = -1;
 		pthread_cond_broadcast(&s_panCond);
@@ -365,8 +420,13 @@ static void Stats(double copyMs)
 	if (++frames < 300)
 		return;
 	const double t = NowMs(), c = CpuMs();
-	fprintf(stderr, "miyoo: %.1f fps shown, cpu %.2f ms/frame, copy %.2f ms, %d left out\n",
-		frames * 1000.0 / (t - t0), (c - c0) / frames, copySum / frames, s_dropped);
+	pthread_mutex_lock(&s_panMutex);
+	fprintf(stderr, "miyoo: %.1f fps shown, cpu %.2f ms/frame, copy %.2f ms, %d left out, pages every %.2f ms (longest %.1f)\n",
+		frames * 1000.0 / (t - t0), (c - c0) / frames, copySum / frames, s_dropped,
+		s_panInts ? s_panIntSum / s_panInts : 0.0, s_panIntMax);
+	s_panIntSum = s_panIntMax = 0;
+	s_panInts = 0;
+	pthread_mutex_unlock(&s_panMutex);
 	t0 = t;
 	c0 = c;
 	copySum = 0;
@@ -383,15 +443,15 @@ void MiyooFb_Present(const uint32_t *src, int w, int h, int pitch)
 	if (!s_mem || !src || w <= 0 || h <= 0)
 		return;
 
-	/* MIYOO_VSYNC=0 (benchmarks: timedemo): a frame that comes while the last one is still
-	 * waiting for the panel is left out instead of waiting (as tqrun -V 0), so the game runs at
-	 * its own speed */
+	/* unlimited, or MIYOO_VSYNC=0 (benchmarks: timedemo): a frame that comes while the last one
+	 * is still waiting for the panel is left out instead of waiting (as tqrun -V 0), so the game
+	 * runs at its own speed */
 	if (s_vsync < 0)
 	{
 		const char *e = getenv("MIYOO_VSYNC");
 		s_vsync = !(e && *e == '0');
 	}
-	if (!s_vsync && s_pages > 1)
+	if ((!s_vsync || !s_hold) && s_pages > 1)
 	{
 		int busy;
 		pthread_mutex_lock(&s_panMutex);

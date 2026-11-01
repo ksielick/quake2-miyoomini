@@ -52,6 +52,9 @@ cvar_t *showtrace;
 // Forward declarations
 #ifndef DEDICATED_ONLY
 float GLimp_GetRefreshRate(void);
+#ifdef MIYOO_MINI
+void MiyooFb_SetMaxFps(float fps);	/* miyoo/platform/miyoo_fb.c */
+#endif
 qboolean R_IsVSyncActive(void);
 #endif
 
@@ -374,7 +377,12 @@ Qcommon_Init(int argc, char **argv)
 	cl_async = Cvar_Get("cl_async", "1", CVAR_ARCHIVE);
 	cl_timedemo = Cvar_Get("timedemo", "0", 0);
 	dedicated = Cvar_Get("dedicated", "0", CVAR_NOSET);
+#ifdef MIYOO_MINI
+	/* (half the panel's refresh: every frame shown equally long, cooler, longer battery) */
+	vid_maxfps = Cvar_Get("vid_maxfps", "30", CVAR_ARCHIVE);
+#else
 	vid_maxfps = Cvar_Get("vid_maxfps", "300", CVAR_ARCHIVE);
+#endif
 	host_speeds = Cvar_Get("host_speeds", "0", 0);
 	log_stats = Cvar_Get("log_stats", "0", 0);
 	showtrace = Cvar_Get("showtrace", "0", 0);
@@ -558,6 +566,21 @@ Qcommon_Frame(int usec)
 	}
 
 	// Calculate target and renderframerate.
+#ifdef MIYOO_MINI
+	/* Miyoo Mini: the panel paces the frames (miyoo/platform/miyoo_fb.c, as TyrQuake-Miyoo):
+	   max fps 30 holds each frame for two of its refreshes (29.83 fps), 60 for one, and the
+	   present waits for that. The client then renders as soon as it may, as with vsync above:
+	   its own clock at 30.0 would drift against the panel's 29.83. Above 100: unlimited. */
+	MiyooFb_SetMaxFps(vid_maxfps->value);
+	if (vid_maxfps->value <= 100)
+	{
+		float refreshrate = GLimp_GetRefreshRate();
+
+		rfps = refreshrate * 1.2f;
+		pfps = (cl_maxfps->value < refreshrate - 2) ? cl_maxfps->value : rfps;
+	}
+	else
+#endif
 	if (R_IsVSyncActive())
 	{
 		float refreshrate = GLimp_GetRefreshRate();
