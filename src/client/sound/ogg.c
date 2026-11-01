@@ -73,6 +73,213 @@ static struct {
 static void
 OGG_TogglePlayback(void);
 
+#ifdef MIYOO_MINI
+/*
+ * (Miyoo Mini port) The music is decoded on a thread of its own: stb_vorbis cost ~0.4 ms of
+ * every frame on the game thread (the frame's critical path). As tyrquake-miyoo's bgmusic.c:
+ * the decoder runs at idle priority on the second core (idle between the drawing flushes) and
+ * keeps a few seconds of decoded PCM ready. The file is opened, closed, seeked and asked on
+ * this thread; the decoder reads it only while it is dec_file, which changes under dec_lock,
+ * and OGG_DetachDecoder waits until a read in progress is done.
+ *
+ * SDL_RawSamples resamples each call on its own (from the call's first sample), so the
+ * decoder keeps Yamagi's chunks: one slot per stb_vorbis_get_samples_short_interleaved call
+ * of 4096 shorts, handed to S_RawSamples one by one as OGG_Read did. The same samples in the
+ * same calls: the music sounds exactly as before.
+ */
+#include <pthread.h>
+#include <sched.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#ifndef SCHED_IDLE
+#define SCHED_IDLE 5	/* (no _GNU_SOURCE in this file: strtol would become glibc 2.38's) */
+#endif
+
+#define DEC_SLOTS	64		/* power of two; 64 x 2048 frames = ~3 s at 44.1 kHz */
+#define DEC_SHORTS	4096	/* as OGG_Read's buffer */
+
+typedef struct
+{
+	int frames;	/* > 0 samples per channel, 0 = the end of the file */
+	short data[DEC_SHORTS];
+} dec_slot_t;
+
+static dec_slot_t dec_slots[DEC_SLOTS];
+static volatile unsigned dec_in, dec_out;	/* slots written / read */
+static stb_vorbis *volatile dec_file;
+static volatile qboolean dec_end, dec_busy, dec_quit;
+static qboolean dec_running, dec_failed;
+static unsigned dec_waits;	/* times OGG_Read had to wait for the decoder */
+static unsigned dec_hash = 2166136261u, dec_chunks;	/* MIYOO_OGG_HASH=1: FNV-1a of the chunks
+						   played, printed every 64: the same with and without the thread */
+static qboolean dec_hashing;
+static pthread_t dec_thread;
+static pthread_mutex_t dec_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t dec_cond = PTHREAD_COND_INITIALIZER;
+
+static void *
+OGG_DecoderMain(void *arg)
+{
+	struct sched_param sp;
+	unsigned long mask = 2;	/* core 1, the drawing worker's */
+
+	(void)arg;
+	memset(&sp, 0, sizeof(sp));
+	sched_setscheduler(0, SCHED_IDLE, &sp);
+	syscall(SYS_sched_setaffinity, 0, sizeof(mask), &mask);
+
+	pthread_mutex_lock(&dec_lock);
+	for (;;)
+	{
+		stb_vorbis *f;
+		dec_slot_t *slot;
+		int n;
+
+		while (!dec_quit && (!dec_file || dec_end || dec_in - dec_out >= DEC_SLOTS))
+		{
+			pthread_cond_wait(&dec_cond, &dec_lock);
+		}
+		if (dec_quit)
+		{
+			break;
+		}
+
+		/* decode without the lock (this thread may wait long for a core) */
+		f = dec_file;
+		slot = &dec_slots[dec_in & (DEC_SLOTS - 1)];
+		dec_busy = true;
+		pthread_mutex_unlock(&dec_lock);
+		n = stb_vorbis_get_samples_short_interleaved(f, f->channels, slot->data, DEC_SHORTS);
+		pthread_mutex_lock(&dec_lock);
+		dec_busy = false;
+		if (dec_file == f)
+		{
+			slot->frames = n > 0 ? n : 0;
+			if (n <= 0)
+			{
+				dec_end = true;
+			}
+			__sync_synchronize();
+			dec_in++;
+		}
+		pthread_cond_broadcast(&dec_cond);
+	}
+	pthread_mutex_unlock(&dec_lock);
+	return NULL;
+}
+
+/* the decoder lets go of the file (it may be closed or seeked after this); the decoded
+   slots are dropped */
+static void
+OGG_DetachDecoder(void)
+{
+	if (!dec_running)
+	{
+		return;
+	}
+	pthread_mutex_lock(&dec_lock);
+	dec_file = NULL;
+	while (dec_busy)
+	{
+		pthread_cond_wait(&dec_cond, &dec_lock);
+	}
+	dec_in = dec_out = 0;
+	dec_end = false;
+	pthread_mutex_unlock(&dec_lock);
+}
+
+/* the decoder starts on ogg_file (just opened or seeked) */
+static void
+OGG_AttachDecoder(void)
+{
+	if (!dec_running && !dec_failed)
+	{
+		const char *env = getenv("MIYOO_OGG_THREAD");
+
+		if (env && env[0] == '0')
+		{
+			dec_failed = true;	/* (decoded in the frame, as Yamagi's: for comparisons) */
+			return;
+		}
+
+		dec_quit = false;
+		if (pthread_create(&dec_thread, NULL, OGG_DecoderMain, NULL) == 0)
+		{
+			dec_running = true;
+		}
+		else
+		{
+			Com_Printf("OGG: no decoder thread, decoding in the frame\n");
+			dec_failed = true;
+		}
+	}
+	if (!dec_running)
+	{
+		return;
+	}
+	pthread_mutex_lock(&dec_lock);
+	dec_in = dec_out = 0;
+	dec_end = false;
+	dec_file = ogg_file;
+	pthread_cond_broadcast(&dec_cond);
+	pthread_mutex_unlock(&dec_lock);
+}
+
+static void
+OGG_StopDecoder(void)
+{
+	if (!dec_running)
+	{
+		return;
+	}
+	pthread_mutex_lock(&dec_lock);
+	dec_file = NULL;
+	dec_quit = true;
+	pthread_cond_broadcast(&dec_cond);
+	pthread_mutex_unlock(&dec_lock);
+	pthread_join(dec_thread, NULL);
+	dec_running = false;
+	Com_Printf("OGG: the game waited for the music decoder %u times\n", dec_waits);
+}
+
+/* the next decoded chunk, as OGG_Read's stb_vorbis call would have returned it: its sample
+   count (0 at the end of the file) and the samples; waits for the decoder if it is behind */
+static int
+OGG_NextChunk(short **data)
+{
+	dec_slot_t *slot;
+
+	if (dec_in == dec_out)
+	{
+		pthread_mutex_lock(&dec_lock);
+		if (dec_in == dec_out)
+		{
+			dec_waits++;
+		}
+		while (dec_in == dec_out)
+		{
+			pthread_cond_wait(&dec_cond, &dec_lock);
+		}
+		pthread_mutex_unlock(&dec_lock);
+	}
+	__sync_synchronize();
+	slot = &dec_slots[dec_out & (DEC_SLOTS - 1)];
+	*data = slot->data;
+	return slot->frames;
+}
+
+/* the chunk from OGG_NextChunk is used: its slot may be decoded into again */
+static void
+OGG_ChunkDone(void)
+{
+	pthread_mutex_lock(&dec_lock);
+	dec_out++;
+	pthread_cond_broadcast(&dec_cond);
+	pthread_mutex_unlock(&dec_lock);
+}
+#endif
+
 // --------
 
 /*
@@ -279,11 +486,21 @@ OGG_InitTrackList(void)
 void
 static OGG_Read(void)
 {
-	short samples[4096];
+	short samples_local[4096];
+	short *samples = samples_local;
 	float volume = (ogg_mutemusic == true) ? 0.0f : ogg_volume->value;
+	int read_samples;
 
-	int read_samples = stb_vorbis_get_samples_short_interleaved(ogg_file, ogg_file->channels, samples,
-		ARRLEN(samples));
+#ifdef MIYOO_MINI
+	/* (the decoder thread's chunk, see OGG_DecoderMain) */
+	if (dec_running && dec_file == ogg_file)
+	{
+		read_samples = OGG_NextChunk(&samples);
+	}
+	else
+#endif
+	read_samples = stb_vorbis_get_samples_short_interleaved(ogg_file, ogg_file->channels,
+		samples, ARRLEN(samples_local));
 
 	if (read_samples > 0)
 	{
@@ -291,9 +508,33 @@ static OGG_Read(void)
 
 		S_RawSamples(read_samples, ogg_file->sample_rate, sizeof(short), ogg_file->channels,
 			(byte *)samples, volume);
+#ifdef MIYOO_MINI
+		if (dec_hashing)
+		{
+			const byte *b = (const byte *)samples;
+			int i, n = read_samples * ogg_file->channels * (int)sizeof(short);
+
+			dec_hash = (dec_hash ^ (unsigned)read_samples) * 16777619u;
+			for (i = 0; i < n; i++)
+			{
+				dec_hash = (dec_hash ^ b[i]) * 16777619u;
+			}
+			if (++dec_chunks % 64 == 0)
+			{
+				Com_Printf("OGG: chunk %u hash %08x\n", dec_chunks, dec_hash);
+			}
+		}
+		if (samples != samples_local)
+		{
+			OGG_ChunkDone();
+		}
+#endif
 	}
 	else
 	{
+#ifdef MIYOO_MINI
+		OGG_DetachDecoder();
+#endif
 		// We cannot call OGG_Stop() here. It flushes the OpenAL sample
 		// queue, thus about 12 seconds of music are lost. Instead we
 		// just set the OGG state to stop and open a new file. The new
@@ -461,6 +702,9 @@ OGG_PlayTrack(const char *track, qboolean cdtrack, qboolean immediate)
 		ogg_curfile = 0;
 		ogg_numsamples = 0;
 		ogg_status = PLAY;
+#ifdef MIYOO_MINI
+		OGG_AttachDecoder();
+#endif
 
 		return;
 	}
@@ -607,9 +851,33 @@ OGG_PlayTrack(const char *track, qboolean cdtrack, qboolean immediate)
 	ogg_curfile = trackNo;
 	ogg_numsamples = 0;
 	ogg_status = PLAY;
+#ifdef MIYOO_MINI
+	OGG_AttachDecoder();
+#endif
 }
 
 // ----
+
+/* the file's decoding position (with the decoder thread: not while it reads the file, and
+   it is decoded ahead of what plays) */
+static int
+OGG_SampleOffset(void)
+{
+	int offset;
+
+#ifdef MIYOO_MINI
+	pthread_mutex_lock(&dec_lock);
+	while (dec_busy)
+	{
+		pthread_cond_wait(&dec_cond, &dec_lock);
+	}
+#endif
+	offset = stb_vorbis_get_sample_offset(ogg_file);
+#ifdef MIYOO_MINI
+	pthread_mutex_unlock(&dec_lock);
+#endif
+	return offset;
+}
 
 /*
  * List Ogg Vorbis files and print current playback state.
@@ -637,12 +905,12 @@ OGG_Info(void)
 	{
 		case PLAY:
 			Com_Printf("State: Playing file %d (%s) at %i samples.\n",
-			           ogg_curfile, ogg_tracks[ogg_curfile], stb_vorbis_get_sample_offset(ogg_file));
+			           ogg_curfile, ogg_tracks[ogg_curfile], OGG_SampleOffset());
 			break;
 
 		case PAUSE:
 			Com_Printf("State: Paused file %d (%s) at %i samples.\n",
-			           ogg_curfile, ogg_tracks[ogg_curfile], stb_vorbis_get_sample_offset(ogg_file));
+			           ogg_curfile, ogg_tracks[ogg_curfile], OGG_SampleOffset());
 			break;
 
 		case STOP:
@@ -677,6 +945,9 @@ OGG_Stop(void)
 	}
 #endif
 
+#ifdef MIYOO_MINI
+	OGG_DetachDecoder();
+#endif
 	stb_vorbis_close(ogg_file);
 	ogg_status = STOP;
 	ogg_numbufs = 0;
@@ -807,8 +1078,17 @@ OGG_RecoverState(void)
 	Cvar_SetValue("ogg_shuffle", 0);
 
 	OGG_PlayTrack(va("%d", ogg_saved_state.curfile), false, true);
+#ifdef MIYOO_MINI
+	OGG_DetachDecoder();
+#endif
 	stb_vorbis_seek_frame(ogg_file, ogg_saved_state.numsamples);
 	ogg_numsamples = ogg_saved_state.numsamples;
+#ifdef MIYOO_MINI
+	if (ogg_status == PLAY)
+	{
+		OGG_AttachDecoder();
+	}
+#endif
 
 	Cvar_SetValue("ogg_shuffle", shuffle_state);
 }
@@ -853,6 +1133,9 @@ OGG_Init(void)
 
 	ogg_mutemusic = false;
 	ogg_started = true;
+#ifdef MIYOO_MINI
+	dec_hashing = getenv("MIYOO_OGG_HASH") != NULL;
+#endif
 }
 
 /*
@@ -868,6 +1151,9 @@ OGG_Shutdown(void)
 
 	// Music must be stopped.
 	OGG_Stop();
+#ifdef MIYOO_MINI
+	OGG_StopDecoder();
+#endif
 
 	// Free file list.
 	for(int i=0; i<MAX_NUM_OGGTRACKS; ++i)

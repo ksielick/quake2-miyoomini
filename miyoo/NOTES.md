@@ -705,7 +705,59 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     60.6-61.1 fps, about +0.7 %.
   - Too little for the extra code: reverted. gcc's own loop (6 instructions a pixel for a
     row, 9 diagonal) is close to what unrolling gets on the in-order core.
-- **Where it stands (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
+- **5. The music: the GOG tracks on the card, decoded on a thread of its own** (2026-11-01
+  15:10, owner asked).
+  - The 20 tracks (120 MB, the owner's GOG data, never in the repo) were copied to
+    `Games/Quake2/music/`, next to `baseq2/` as in GOG. demo1 and demo2 play a track.
+  - The cost with music in the frame (main build s3c, A B A B as in play): music off
+    58.2 / 58.1 and 55.7 / 55.2 fps, on 57.8 / 57.8 and 54.4 / 54.9 fps.
+    stb_vorbis took ~22 of ~1250 samples in the profile (`build/prof/ogg_demo1.txt`):
+    ~0.4 ms of each frame on the game thread.
+  - ogg.c (`#ifdef MIYOO_MINI`), as tyrquake-miyoo's bgmusic.c:
+    - A decoder thread at SCHED_IDLE on core 1 keeps 64 decoded chunks, ~3 s.
+    - The file is opened, closed, seeked and asked only on the game thread. The decoder
+      reads it only while it is `dec_file`, and OGG_DetachDecoder waits for a read in
+      progress first.
+    - **Yamagi's chunks are kept**: SDL_RawSamples resamples each call from its first
+      sample, so each slot is one `stb_vorbis_get_samples_short_interleaved` call of 4096
+      shorts, handed over one by one.
+    - `MIYOO_OGG_THREAD=0` decodes in the frame as before. `MIYOO_OGG_HASH=1` prints an
+      FNV-1a of the chunks played every 64 chunks.
+    - No `_GNU_SOURCE` in ogg.c (strtol would become `__isoc23_strtol@GLIBC_2.38`): the
+      core is set with `syscall(SYS_sched_setaffinity)`, and SCHED_IDLE is defined by
+      hand.
+  - **The same music**: the hash lines with and without the thread are identical (chunks
+    128 and 192 in both demos). The game waited for the decoder 0-4 times per demo, at a
+    track's start.
+  - As in play with music (A B A B, `build/frames_2026-11-01m/`): demo1 57.5 / 56.9 ->
+    **58.0 / 58.2 fps**, demo2 54.4 / 54.6 -> **55.3 / 55.4 fps** (+1.6 %, the same as with
+    music off). p90 demo1 20.6-21.9 -> 19.9-20.0 ms, p99 28.9-29.8 -> 26.9 ms.
+  - The card's main build is now `build/miyoo_ogg`.
+- **Sound ideas from tyrquake-miyoo** (2026-11-01, owner asked). The owner hears no problems,
+  but finds the sound rather "sharp":
+  - Already as there: a thread of our own writes to audioserver (miyoo_audio.c), so only
+    the panel paces the game; the music decoder thread (above).
+  - **Sharpness** (tyrquake-miyoo: the owner found the 5 kHz filter "much more pleasant and
+    soft"). Quake II's causes:
+    - Sound effects are resampled to 48 kHz by taking the nearest sample, with no
+      interpolation (`SDL_Cache`), as is the music (`SDL_RawSamples`). That aliasing is
+      harsh.
+    - The 11 / 22 kHz effects play unfiltered.
+    - Yamagi has a 5 kHz low-pass filter (sdl.c lpf_*), but only underwater.
+    - Candidates, as options as in tyrquake-miyoo: a "Sound Filter" low-pass (4th order,
+      5 kHz) on the effects, and interpolated resampling. These change the sound, so only
+      with the owner's yes.
+  - Fixes that remove clicks without changing the sound, all of which Quake II needs too:
+    - The mix is hard-clipped at ±32767 (`SDL_TransferPaintBuffer`). tyrquake-miyoo's
+      look-ahead limiter took the crackle out of explosions there.
+    - `SDL_Cache` steps with 8 fractional bits (`samplefrac >> 8`, `stepscale * 256`): the
+      step is truncated, every sound slightly low and its last part never played. That
+      was tyrquake's ResampleSfx bug.
+    - A sound cut by a new one on the same channel stops mid-wave (fast weapons, menu
+      sounds): the declicker.
+    - A moving source's volume jumps once a frame: volume ramps.
+    - Fades around loads (to check).
+- **Where it stood (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
   play (+50 % / +64 %)**; at timedemo speed 67 / 60.5 fps. Pixel for pixel the same. The
   card's main build is `build/miyoo_s3c`.
   - Still to do: PGO with a new profile, the random system hiccups.
