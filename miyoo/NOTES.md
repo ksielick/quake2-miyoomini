@@ -518,3 +518,31 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     **+7 % / +5 %.** With no frame limit (timedemo speed): demo1 44.8, demo2 39.3 fps.
   - So far from 38.5 / 33.5 fps (-O2) to 45.2 / 39.8 fps: **+17 % / +19 %**, every step
     pixel for pixel the same. PGO not yet on top (its profile is from before these changes).
+- **2.2 The world's spans and z spans on two threads** (2026-11-01 12:40, tyrquake-miyoo's
+  d_mt.c scheme; sw_mt.c, sw_edge.c, sw_scan.c, sw_surf.c):
+  - D_DrawSurfaces records each surface's span drawing (SW_OP_SPANS / SKY / TURB / NONTURB /
+    FLAT) with a copy of the drawing state; SW_MT_EndRecord replays the records on both
+    threads, upper and lower band, the split row moved towards equal times per flush slot
+    (as tyrquake). The span drawers skip spans outside the thread's band
+    (`SW_SPAN_OUTSIDE_BAND`). The state they read is per thread (`SW_TLS`: __thread,
+    initial-exec): d_sdivzstepu & co, sadjust, tadjust, bbextents, bbextentt, cacheblock,
+    cachewidth.
+  - **Yamagi's z-damage check** (D_DrawZSpans writes z only inside the area the last frame's
+    models damaged, and widens it as it goes): it depends on the order, so it is made while
+    recording, in the original order, into each span's new `zwrite`; the replay only reads it.
+  - **Surface cache blocks**: a block a record uses (`surfcache_t.mtpass`) is never
+    overwritten before the records are drawn: D_SCAlloc (each block it frees) and
+    D_CacheSurface (a rebuild in place) call SW_MT_CacheOverwrite, which draws the records
+    first. (Exact, unlike tyrquake's "flush after a quarter of the cache" rule, which left
+    a hit block just ahead of the rover at risk.)
+  - Measured as in play (VSYNC=1, max fps 60, A B A B): demo1 44.1 / 44.6 -> **48.4 / 48.3
+    fps**, demo2 38.6 / 38.9 -> **42.3 / 41.9 fps: +9 %** (timedemo speed: 48.7 / 41.6).
+  - **Shots: numbered by the demo's own frame now.** The two-thread build first gave other
+    moments of demo1 in every shot (the camera elsewhere, other ammo), not other pixels:
+    the shots were numbered by the presents since the start, and how many frames are drawn
+    while the map loads depends on the speed (the builds up to ~45 fps happened to match).
+    Now `Miyoo_DemoFrame` = `cl.timedemo_frames` (set in cl_view.c, `#ifdef MIYOO_MINI`)
+    numbers them (miyoo_sdl.c ShotDue). New reference `build/shots/ref` (-O2 build, one
+    thread, CPU pass: `sw_threads 0`, `MIYOO_GFX_I8=0`), made twice: identical. Against it
+    the two-thread build, with sw_threads 1 and 0: **25/25 identical**.
+  - `/tmp` is emptied by a reboot: copy bench.sh and bench_ab.sh with every step script.

@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <limits.h>
 #include <stdint.h>
 #include "header/local.h"
+#include "header/sw_mt.h"
 /*
 the complex cases add new polys on most lines, so dont optimize for keeping them the same
 have multiple free span lists to try to get better coherence?
@@ -766,6 +767,10 @@ D_FlatFillSurface (surf_t *surf, pixel_t color)
 	{
 		pixel_t   *pdest;
 
+		if (SW_SPAN_OUTSIDE_BAND(span))
+		{
+			continue;	/* (sw_mt.c: the other thread's rows) */
+		}
 		pdest = d_viewbuffer + vid_buffer_width*span->v + span->u;
 		memset(pdest,  color&0xFF, span->count * sizeof(pixel_t));
 	}
@@ -832,6 +837,92 @@ D_CalcGradients (msurface_t *pface, float d_ziorigin, float d_zistepu, float d_z
 
 /*
 ==============
+SW_MT_Record (Miyoo Mini, sw_mt.c)
+
+Records a surface's span drawing with the drawing state now set, and makes the z-damage
+check of each span now, in the original order (D_DrawZSpans' check and damage)
+==============
+*/
+static qboolean mt_rec;	/* D_DrawSurfaces is recording */
+
+static void
+SW_MT_Record(int op, const surf_t *s, int color)
+{
+	sw_drawcmd_t *c = SW_MT_NewCmd();
+	espan_t *p;
+
+	c->op = op;
+	c->color = color;
+	c->spans = s->spans;
+	c->ziorigin = s->d_ziorigin;
+	c->zistepu = s->d_zistepu;
+	c->zistepv = s->d_zistepv;
+	c->sdivzstepu = d_sdivzstepu;
+	c->tdivzstepu = d_tdivzstepu;
+	c->sdivzstepv = d_sdivzstepv;
+	c->tdivzstepv = d_tdivzstepv;
+	c->sdivzorigin = d_sdivzorigin;
+	c->tdivzorigin = d_tdivzorigin;
+	c->sadjust = sadjust;
+	c->tadjust = tadjust;
+	c->bbextents = bbextents;
+	c->bbextentt = bbextentt;
+	c->cacheblock = cacheblock;
+	c->cachewidth = cachewidth;
+
+	for (p = s->spans; p; p = p->pnext)
+	{
+		p->zwrite = VID_CheckDamageZBuffer(p->u, p->v, p->count, 0);
+		if (p->zwrite)
+		{
+			VID_DamageZBuffer(p->u, p->v);
+			VID_DamageZBuffer(p->u + p->count, p->v);
+		}
+	}
+}
+
+void
+SW_MT_Exec(const sw_drawcmd_t *c)
+{
+	switch (c->op)
+	{
+		case SW_OP_SPANS:
+			D_DrawSpansPow2 (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			D_DrawZSpans (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			break;
+		case SW_OP_SKY:
+			D_DrawSpansPow2 (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			D_DrawZSpans (c->spans, -0.9, 0, 0);
+			break;
+		case SW_OP_TURB:
+			TurbulentPow2 (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			D_DrawZSpans (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			break;
+		case SW_OP_NONTURB:
+			NonTurbulentPow2 (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			D_DrawZSpans (c->spans, c->ziorigin, c->zistepu, c->zistepv);
+			break;
+		case SW_OP_FLAT:
+		{
+			espan_t *span;
+
+			for (span = c->spans; span; span = span->pnext)
+			{
+				if (SW_SPAN_OUTSIDE_BAND(span))
+				{
+					continue;
+				}
+				memset(d_viewbuffer + vid_buffer_width * span->v + span->u,
+					c->color & 0xFF, span->count * sizeof(pixel_t));
+			}
+			D_DrawZSpans (c->spans, -0.9, 0, 0);
+			break;
+		}
+	}
+}
+
+/*
+==============
 D_BackgroundSurf
 
 The grey background filler seen when there is a hole in the map
@@ -840,6 +931,11 @@ The grey background filler seen when there is a hole in the map
 static void
 D_BackgroundSurf (surf_t *s)
 {
+	if (mt_rec)
+	{
+		SW_MT_Record(SW_OP_FLAT, s, (int)sw_clearcolor->value & 0xFF);
+		return;
+	}
 	D_FlatFillSurface (s, (int)sw_clearcolor->value & 0xFF);
 	// set up a gradient for the background surface that places it
 	// effectively at infinity distance from the viewpoint
@@ -877,6 +973,12 @@ D_TurbulentSurf(surf_t *s)
 
 	D_CalcGradients (pface, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
+	if (mt_rec)
+	{
+		SW_MT_Record((pface->texinfo->flags & SURF_WARP) ? SW_OP_TURB : SW_OP_NONTURB, s, 0);
+	}
+	else
+	{
 	//============
 	// textures that aren't warping are just flowing. Use NonTurbulentPow2 instead
 	if(!(pface->texinfo->flags & SURF_WARP))
@@ -886,6 +988,7 @@ D_TurbulentSurf(surf_t *s)
 	//============
 
 	D_DrawZSpans (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+	}
 
 	if (s->insubmodel)
 	{
@@ -919,6 +1022,12 @@ D_SkySurf (surf_t *s)
 	cachewidth = 256;
 
 	D_CalcGradients (pface, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+
+	if (mt_rec)
+	{
+		SW_MT_Record(SW_OP_SKY, s, 0);
+		return;
+	}
 
 	D_DrawSpansPow2 (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
@@ -966,15 +1075,23 @@ D_SolidSurf (entity_t *currententity, surf_t *s)
 
 	// FIXME: make this passed in to D_CacheSurface
 	pcurrentcache = D_CacheSurface (currententity, pface, miplevel);
+	SW_MT_CacheUse(pcurrentcache);
 
 	cacheblock = (pixel_t *)pcurrentcache->data;
 	cachewidth = pcurrentcache->width;
 
 	D_CalcGradients (pface, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
-	D_DrawSpansPow2 (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+	if (mt_rec)
+	{
+		SW_MT_Record(SW_OP_SPANS, s, 0);
+	}
+	else
+	{
+		D_DrawSpansPow2 (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
 
-	D_DrawZSpans (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+		D_DrawZSpans (s->spans, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+	}
 
 	if (s->insubmodel)
 	{
@@ -1038,6 +1155,9 @@ D_DrawSurfaces (entity_t *currententity, const surf_t *surface)
 	{
 		surf_t *s;
 
+		/* Miyoo Mini: record the spans, then draw them on both threads (sw_mt.c) */
+		mt_rec = SW_MT_BeginRecord(r_refdef.vrect.y, r_refdef.vrect.y + r_refdef.vrect.height);
+
 		for (s = &surfaces[1] ; s<surface ; s++)
 		{
 			if (!s->spans)
@@ -1053,6 +1173,12 @@ D_DrawSurfaces (entity_t *currententity, const surf_t *surface)
 				D_BackgroundSurf (s);
 			else if (s->flags & SURF_DRAWTURB)
 				D_TurbulentSurf (s);
+		}
+
+		if (mt_rec)
+		{
+			SW_MT_EndRecord();
+			mt_rec = false;
 		}
 	}
 	else

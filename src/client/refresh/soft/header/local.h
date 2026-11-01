@@ -132,6 +132,15 @@ extern oldrefdef_t	r_refdef;
 
 #include "model.h"
 
+/* Miyoo Mini: the span drawers run on two threads (sw_mt.c); the drawing state they read
+   is per thread. initial-exec: ref_soft.so is dlopen'ed, but these few bytes fit glibc's
+   static TLS surplus, and an access is a load and an add (tyrquake-miyoo's D_TLS). */
+#ifdef MIYOO_MINI
+#define SW_TLS __thread __attribute__((tls_model("initial-exec")))
+#else
+#define SW_TLS
+#endif
+
 /*
 ====================================================
 
@@ -264,6 +273,7 @@ typedef struct surfcache_s
 	unsigned		height; // DEBUG only needed for debug
 	float			mipscale;
 	image_t			*image;
+	int			mtpass; // sw_mt.c: the recording that last used it
 	byte			data[4]; // width*height elements
 } surfcache_t;
 
@@ -271,6 +281,7 @@ typedef struct espan_s
 {
 	int		u, v, count;
 	struct espan_s	*pnext;
+	int		zwrite; // sw_mt.c: write its z (the z-damage check, made in order)
 } espan_t;
 extern espan_t	*vid_polygon_spans; // space for spans in r_poly
 
@@ -355,9 +366,9 @@ extern pixel_t		*r_warpbuffer;
 
 extern float		scale_for_mip;
 
-extern float	d_sdivzstepu, d_tdivzstepu;
-extern float	d_sdivzstepv, d_tdivzstepv;
-extern float	d_sdivzorigin, d_tdivzorigin;
+extern SW_TLS float	d_sdivzstepu, d_tdivzstepu;
+extern SW_TLS float	d_sdivzstepv, d_tdivzstepv;
+extern SW_TLS float	d_sdivzorigin, d_tdivzorigin;
 
 void D_DrawSpansPow2(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
 void D_DrawZSpans(espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv);
@@ -382,8 +393,8 @@ extern int vid_buffer_width;
 
 //===================================================================
 
-extern int	cachewidth;
-extern pixel_t	*cacheblock;
+extern SW_TLS int	cachewidth;
+extern SW_TLS pixel_t	*cacheblock;
 
 extern int	r_drawnpolycount;
 
@@ -490,8 +501,8 @@ void R_RotateBmodel(const entity_t *currententity);
 extern int	c_faceclip;
 extern int	r_polycount;
 
-extern int	sadjust, tadjust;
-extern int	bbextents, bbextentt;
+extern SW_TLS int	sadjust, tadjust;
+extern SW_TLS int	bbextents, bbextentt;
 
 extern int	r_currentkey;
 

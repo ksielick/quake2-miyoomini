@@ -206,14 +206,14 @@ cvar_t	*r_cull;
 // FIXME: make into one big structure, like cl or sv
 // FIXME: do separately for refresh engine and driver
 
-float	d_sdivzstepu, d_tdivzstepu;
-float	d_sdivzstepv, d_tdivzstepv;
-float	d_sdivzorigin, d_tdivzorigin;
+SW_TLS float	d_sdivzstepu, d_tdivzstepu;
+SW_TLS float	d_sdivzstepv, d_tdivzstepv;
+SW_TLS float	d_sdivzorigin, d_tdivzorigin;
 
-int	sadjust, tadjust, bbextents, bbextentt;
+SW_TLS int	sadjust, tadjust, bbextents, bbextentt;
 
-pixel_t		*cacheblock;
-int		cachewidth;
+SW_TLS pixel_t		*cacheblock;
+SW_TLS int		cachewidth;
 pixel_t		*d_viewbuffer;
 zvalue_t	*d_pzbuffer;
 

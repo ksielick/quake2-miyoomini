@@ -446,31 +446,55 @@ int SDL_RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect 
 }
 
 /* Screenshots for bit-exact comparisons of builds (miyoo/tools/bench.sh SHOTS=N,
- * miyoo/tools/shots_compare.py): MIYOO_SHOTS=N saves every Nth frame the game presents (counted
- * from the first, whether or not the panel shows it) as <MIYOO_SHOTS_DIR>/NNNNN.argb, the frame
- * as the renderer made it (w x h, 32-bit 0xAARRGGBB little-endian). A timedemo draws the same
- * frames every run, so a build that draws the same gives the same files. Slow: not for timings. */
-static void SaveShot(const SDL_Texture *t)
+ * miyoo/tools/shots_compare.py): MIYOO_SHOTS=N saves every Nth frame as
+ * <MIYOO_SHOTS_DIR>/NNNNN.argb, the frame as the renderer made it (w x h, 32-bit 0xAARRGGBB
+ * little-endian). In a timedemo the number is the demo's own frame (Miyoo_DemoFrame, set by
+ * cl_view.c: cl.timedemo_frames), the same moment of the demo in every run and build: counting
+ * the presents instead shifted with the speed (more frames drawn while the map loads; the
+ * two-thread build at 49 fps got other moments, 2026-11-01). Outside timedemos, the presents.
+ * Slow: not for timings. */
+int Miyoo_DemoFrame;
+
+/* the number of the shot due at this present, 0: none */
+static unsigned ShotDue(void)
 {
 	static int every = -1;
-	static unsigned frame;
-	static const char *dir;
+	static unsigned presents, lastDemo;
 	unsigned k;
-	char path[512];
-	FILE *f;
 
 	if (every < 0)
 	{
 		const char *e = getenv("MIYOO_SHOTS");
 		every = e ? atoi(e) : 0;
+	}
+	k = presents++;
+	if (every <= 0)
+		return 0;
+	if (Miyoo_DemoFrame > 0)
+	{
+		k = (unsigned)Miyoo_DemoFrame;
+		if (k == lastDemo)
+			return 0;	/* (that demo frame was saved) */
+		lastDemo = k;
+	}
+	/* frames N, 2N, ... (frame 0 shows the console with the date and time, different every run) */
+	return k && k % every == 0 ? k : 0;
+}
+
+static void SaveShot(const SDL_Texture *t, unsigned k)
+{
+	static const char *dir;
+	char path[512];
+	FILE *f;
+
+	if (!k)
+		return;
+	if (!dir)
+	{
 		dir = getenv("MIYOO_SHOTS_DIR");
 		if (!dir)
 			dir = ".";
 	}
-	/* frames N, 2N, ... (frame 0 shows the console with the date and time, different every run) */
-	k = frame++;
-	if (every <= 0 || k == 0 || k % every)
-		return;
 	snprintf(path, sizeof(path), "%s/%05u.argb", dir, k);
 	f = fopen(path, "wb");
 	if (f)
@@ -544,23 +568,13 @@ void SDL_RenderPresent(SDL_Renderer *renderer)
 		int ok;
 
 		/* the shots and the CPU fallback need the 32-bit frame: the texture (same size) */
-		if (s_shown && s_shown->w == w && s_shown->h == h)
+		const unsigned shot = ShotDue();
+		if (shot && s_shown && s_shown->w == w && s_shown->h == h)
 		{
-			static int every = -1;
-			static unsigned n;
-			if (every < 0)
-			{
-				const char *e = getenv("MIYOO_SHOTS");
-				every = e ? atoi(e) : 0;
-			}
-			if (every > 0 && n % every == 0 && n)
-			{
-				int i;
-				for (i = 0; i < w * h; i++)
-					s_shown->px[i] = s_indexed.pal[s_indexed.idx[i]];	/* (as RE_CopyFrame) */
-			}
-			n++;
-			SaveShot(s_shown);
+			int i;
+			for (i = 0; i < w * h; i++)
+				s_shown->px[i] = s_indexed.pal[s_indexed.idx[i]];	/* (as RE_CopyFrame) */
+			SaveShot(s_shown, shot);
 		}
 		ok = MiyooFb_PresentI8(s_indexed.idx, s_indexed.pal, w, h);
 		if (!ok && s_shown && s_shown->w == w && s_shown->h == h)
@@ -575,7 +589,7 @@ void SDL_RenderPresent(SDL_Renderer *renderer)
 	}
 	if (!s_shown)
 		return;
-	SaveShot(s_shown);
+	SaveShot(s_shown, ShotDue());
 	MiyooFb_Present(s_shown->px, s_shown->w, s_shown->h, s_shown->w);
 }
 

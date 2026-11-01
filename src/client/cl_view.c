@@ -485,6 +485,14 @@ V_RenderView(float stereo_separation)
 		}
 
 		cl.timedemo_frames++;
+#ifdef MIYOO_MINI
+		{
+			/* the demo's own frame number, for the Miyoo port's screenshots (miyoo_sdl.c):
+			   the frames drawn while the map loads depend on the speed, these don't */
+			extern int Miyoo_DemoFrame;
+			Miyoo_DemoFrame = cl.timedemo_frames;
+		}
+#endif
 	}
 
 	/* an invalid frame will just use the exact previous refdef

@@ -16,6 +16,7 @@
 
 #include <pthread.h>
 #include <sched.h>
+#include <time.h>
 
 #include "header/local.h"
 #include "header/sw_mt.h"
@@ -121,6 +122,178 @@ SW_MT_Shutdown(void)
 	pthread_mutex_unlock(&job_lock);
 	pthread_join(worker, NULL);
 	worker_running = false;
+}
+
+qboolean SW_MT_RunBoth(void (*fn)(int part, void *arg), void *arg);
+
+/* ---- the world's spans on both threads (see sw_mt.h) */
+
+SW_TLS int sw_band_v0 = 0, sw_band_v1 = 0x7fffffff;
+SW_TLS int sw_mt_replaying;
+
+static sw_drawcmd_t *cmds;
+static int numcmds, maxcmds;
+static qboolean recording;
+static int rec_v0, rec_v1;
+static int mtpass = 1;	/* surfcache_t.mtpass of the blocks the current records use */
+
+/* the upper part's share of the rows, moved towards equal drawing times; per flush of a
+ * frame (a frame's flushes cover different parts of the screen) */
+#define MAX_SPLIT_SLOTS 8
+static float split[MAX_SPLIT_SLOTS];
+static int flush_slot, flush_frame = -1;
+
+typedef struct
+{
+	int v[3];		/* part 0: [v[0], v[1]), part 1: [v[1], v[2]) */
+	double ms[2];
+} replayjob_t;
+
+static double
+now_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+}
+
+static void
+replay(int part, void *arg)
+{
+	replayjob_t *j = arg;
+	const double t0 = now_ms();
+	int i;
+
+	sw_band_v0 = j->v[part];
+	sw_band_v1 = j->v[part + 1];
+	sw_mt_replaying = 1;
+	for (i = 0; i < numcmds; i++)
+	{
+		const sw_drawcmd_t *c = &cmds[i];
+
+		d_sdivzstepu = c->sdivzstepu;
+		d_tdivzstepu = c->tdivzstepu;
+		d_sdivzstepv = c->sdivzstepv;
+		d_tdivzstepv = c->tdivzstepv;
+		d_sdivzorigin = c->sdivzorigin;
+		d_tdivzorigin = c->tdivzorigin;
+		sadjust = c->sadjust;
+		tadjust = c->tadjust;
+		bbextents = c->bbextents;
+		bbextentt = c->bbextentt;
+		cacheblock = c->cacheblock;
+		cachewidth = c->cachewidth;
+		SW_MT_Exec(c);
+	}
+	sw_mt_replaying = 0;
+	sw_band_v0 = 0;
+	sw_band_v1 = 0x7fffffff;
+	j->ms[part] = now_ms() - t0;
+}
+
+static void
+flush(void)
+{
+	replayjob_t j;
+	int slot;
+	float f;
+
+	if (!numcmds)
+	{
+		return;
+	}
+
+	if (flush_frame != r_framecount)
+	{
+		flush_frame = r_framecount;
+		flush_slot = 0;
+	}
+	slot = flush_slot < MAX_SPLIT_SLOTS ? flush_slot : MAX_SPLIT_SLOTS - 1;
+	flush_slot++;
+	f = split[slot] > 0.0f ? split[slot] : 0.5f;
+
+	j.v[0] = rec_v0;
+	j.v[1] = rec_v0 + (int)((rec_v1 - rec_v0) * f + 0.5f);
+	j.v[2] = rec_v1;
+	j.ms[0] = j.ms[1] = 0.0;
+	if (!SW_MT_RunBoth(replay, &j))
+	{
+		replay(0, &j);
+		replay(1, &j);
+	}
+	else if (j.ms[0] > 0.05 && j.ms[1] > 0.05)
+	{
+		/* per-row costs of the two parts in this flush: the split that would make them equal */
+		const float cm = (float)(j.ms[0] / f), cw = (float)(j.ms[1] / (1.0f - f));
+		f = 0.75f * f + 0.25f * (cw / (cm + cw));
+		f = f < 0.1f ? 0.1f : f > 0.9f ? 0.9f : f;
+	}
+	split[slot] = f;
+
+	numcmds = 0;
+	mtpass++;	/* the blocks used so far may be overwritten now */
+}
+
+qboolean
+SW_MT_BeginRecord(int v0, int v1)
+{
+	if (!sw_threads || !sw_threads->value)
+	{
+		return false;
+	}
+	recording = true;
+	rec_v0 = v0;
+	rec_v1 = v1;
+	numcmds = 0;
+	return true;
+}
+
+sw_drawcmd_t *
+SW_MT_NewCmd(void)
+{
+	if (numcmds == maxcmds)
+	{
+		int n = maxcmds ? maxcmds * 2 : 1024;
+		sw_drawcmd_t *p = realloc(cmds, n * sizeof(*cmds));
+
+		if (!p)
+		{
+			flush();	/* out of memory: draw what there is, then use the room again */
+			if (numcmds == maxcmds)
+			{
+				Com_Error(ERR_FATAL, "%s: out of memory", __func__);
+			}
+			return &cmds[numcmds++];
+		}
+		cmds = p;
+		maxcmds = n;
+	}
+	return &cmds[numcmds++];
+}
+
+void
+SW_MT_EndRecord(void)
+{
+	flush();
+	recording = false;
+}
+
+void
+SW_MT_CacheUse(surfcache_t *c)
+{
+	if (recording && c)
+	{
+		c->mtpass = mtpass;
+	}
+}
+
+void
+SW_MT_CacheOverwrite(surfcache_t *c)
+{
+	if (recording && c && c->mtpass == mtpass && numcmds)
+	{
+		flush();
+	}
 }
 
 qboolean

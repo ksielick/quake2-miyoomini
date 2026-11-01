@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Portable C scan-level rasterization code, all pixel depths.
 
 #include "header/local.h"
+#include "header/sw_mt.h"
 
 
 #define SPANSTEP_SHIFT	4
@@ -205,6 +206,11 @@ TurbulentPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistep
 
 	do
 	{
+		if (SW_SPAN_OUTSIDE_BAND(pspan))
+		{
+			continue;	/* (sw_mt.c: the other thread's rows) */
+		}
+
 		int count, r_turb_s, r_turb_t;
 		float sdivz, tdivz, zi, z, du, dv;
 		pixel_t	*r_turb_pdest;
@@ -359,6 +365,11 @@ NonTurbulentPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zis
 
 	do
 	{
+		if (SW_SPAN_OUTSIDE_BAND(pspan))
+		{
+			continue;	/* (sw_mt.c: the other thread's rows) */
+		}
+
 		int count, r_turb_s, r_turb_t;
 		float sdivz, tdivz, zi, z, dv, du;
 		pixel_t	*r_turb_pdest;
@@ -612,6 +623,11 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 
 	do
 	{
+		if (SW_SPAN_OUTSIDE_BAND(pspan))
+		{
+			continue;	/* (sw_mt.c: the other thread's rows) */
+		}
+
 		pixel_t	*pdest;
 		int	count, s, t;
 		float	sdivz, tdivz, zi, z, du, dv;
@@ -760,14 +776,25 @@ D_DrawZSpans (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv
 		float		zi;
 		float		du, dv;
 
-		if (!VID_CheckDamageZBuffer(pspan->u, pspan->v, pspan->count, 0))
+		if (sw_mt_replaying)
 		{
-			continue;
+			/* sw_mt.c: the band, and the z-damage check made while recording */
+			if (SW_SPAN_OUTSIDE_BAND(pspan) || !pspan->zwrite)
+			{
+				continue;
+			}
 		}
+		else
+		{
+			if (!VID_CheckDamageZBuffer(pspan->u, pspan->v, pspan->count, 0))
+			{
+				continue;
+			}
 
-		// solid map walls damage
-		VID_DamageZBuffer(pspan->u, pspan->v);
-		VID_DamageZBuffer(pspan->u + pspan->count, pspan->v);
+			// solid map walls damage
+			VID_DamageZBuffer(pspan->u, pspan->v);
+			VID_DamageZBuffer(pspan->u + pspan->count, pspan->v);
+		}
 
 		pdest = d_pzbuffer + (vid_buffer_width * pspan->v) + pspan->u;
 

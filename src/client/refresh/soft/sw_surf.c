@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // sw_surf.c: surface-related refresh code
 
 #include "header/local.h"
+#include "header/sw_mt.h"
 
 static int		sourcetstep;
 static void		*prowdestbase;
@@ -317,6 +318,7 @@ R_InitCaches (void)
 	sc_base->next = NULL;
 	sc_base->owner = NULL;
 	sc_base->size = sc_size;
+	sc_base->mtpass = 0;
 }
 
 
@@ -343,6 +345,7 @@ D_FlushCaches (void)
 	sc_base->next = NULL;
 	sc_base->owner = NULL;
 	sc_base->size = sc_size;
+	sc_base->mtpass = 0;
 }
 
 /*
@@ -381,6 +384,7 @@ D_SCAlloc (int width, int size)
 
 	// colect and free surfcache_t blocks until the rover block is large enough
 	new = sc_rover;
+	SW_MT_CacheOverwrite(sc_rover);	// (sw_mt.c: draws the records that use it first)
 	if (sc_rover->owner)
 		*sc_rover->owner = NULL;
 
@@ -392,6 +396,7 @@ D_SCAlloc (int width, int size)
 		{
 			Com_Error(ERR_FATAL, "%s: hit the end of memory", __func__);
 		}
+		SW_MT_CacheOverwrite(sc_rover);
 		if (sc_rover->owner)
 			*sc_rover->owner = NULL;
 
@@ -407,6 +412,7 @@ D_SCAlloc (int width, int size)
 		sc_rover->next = new->next;
 		sc_rover->width = 0;
 		sc_rover->owner = NULL;
+		sc_rover->mtpass = 0;
 		new->next = sc_rover;
 		new->size = size;
 	}
@@ -472,7 +478,11 @@ D_CacheSurface (const entity_t *currententity, msurface_t *surface, int miplevel
 	//
 	// allocate memory if needed
 	//
-	if (!cache) // if a texture just animated, don't reallocate it
+	if (cache) // rebuilt in place: draw the records that use it first (sw_mt.c)
+	{
+		SW_MT_CacheOverwrite(cache);
+	}
+	else // if a texture just animated, don't reallocate it
 	{
 		cache = D_SCAlloc (r_drawsurf.surfwidth,
 						   r_drawsurf.surfwidth * r_drawsurf.surfheight);
