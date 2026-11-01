@@ -33,6 +33,13 @@ export HOME="$DIR"
 CPU1=/sys/devices/system/cpu/cpu1/online
 [ -f "$CPU1" ] && [ "$(cat "$CPU1" 2>/dev/null)" = 0 ] && { echo 1 > "$CPU1"; } 2>/dev/null
 
+# play log (for stutter checks): with a file playlog.on here, each frame's time and counts go
+# to playlog/frames-<date>.txt, written when the game quits (miyoo_sdl.c MIYOO_FRAMES)
+if [ -f playlog.on ]; then
+	mkdir -p playlog
+	export MIYOO_FRAMES="$DIR/playlog/frames-$(date +%Y%m%d-%H%M%S).txt"
+fi
+
 chmod +x ./quake2 2>/dev/null
 # the software renderer at the panel's 640x480; sound at audioserver's 48 kHz
 # (exec: Onion's SIGTERM at power-off reaches the game itself)

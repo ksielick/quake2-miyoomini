@@ -511,7 +511,7 @@ static void SaveShot(const SDL_Texture *t, unsigned k)
  * the process's getrusage counts during that frame (for the random long frames): major page
  * faults (read from the card: swap or a file), minor faults, voluntary and involuntary
  * context switches (involuntary = another task took the CPU). */
-#define FRAMES_MAX 20000
+#define FRAMES_MAX 216000	/* an hour at 60 fps (2.6 MB): enough for a play log */
 typedef struct { uint32_t us; uint16_t majflt, minflt, nvcsw, nivcsw; } frame_rec_t;
 static frame_rec_t *s_frames;
 static int s_frameCount;
