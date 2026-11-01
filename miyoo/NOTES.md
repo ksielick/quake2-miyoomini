@@ -109,18 +109,93 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
 - The idle "Sleep timer" is off on the owner's device. It runs on battery: check the battery
   (`/customer/app/axp_test`) before and after long tests.
 
-## Plan (first ideas, nothing built yet)
+## Plan (2026-11-01, nothing built yet): reuse what the other ports already have
 
-1. Build the client + soft renderer + baseq2 game for the Mini with the Arm toolchain, **SDL2
-   off**, behind our own small platform layer:
-   - fbdev with 180° flip and page flipping on its own thread;
-   - evdev buttons;
-   - sound to audioserver, or OSS through libpadsp if the binary is dynamic.
-   - Link the renderer and the game in (no dlopen), so one static binary works with no
-     dependence on the device's glibc.
-2. Run the demo `pak0.pak` from `Roms/PORTS/Games/Quake2/baseq2/`. Measure frame times like
-   TyrQuake did (timedemo, `/proc/uptime`).
-3. Resolution: 640x480 native if fast enough, otherwise 320x240 scaled 2x. Use both cores
-   later (TyrQuake's 2-thread surface caches gained 16-23 %).
-4. Release zip that mirrors the card, for Port Manager's catalog (open source, native, no PC
-   program: it fits the catalog's rules).
+Rule: don't write a Miyoo piece from scratch when another port has a tested one. Copy it (with
+a comment naming where it came from), adapt it, and note here what changed. When the same piece
+ends up in three projects, that's the time to move it into a shared library, not before.
+The shared device facts and tools are in the `miyoo` skill and `G:\Emulacja\miyoo.md`.
+
+Paths below: RR2 = `G:\Emulacja\redriver2-miyoo\repos\REDRIVER2`, SCR =
+`G:\Emulacja\stuntcarremake-miyoo\repos\stuntcarremake`, TQ =
+`G:\Emulacja\tyrquake-miyoo\repos\tyrquake`.
+
+### Where each piece comes from
+
+1. **The SDL2 layer: RR2 `src_rebuild/platform/Miyoo/miyoo_sdl.cpp`.**
+   - Yamagi calls ~80 SDL2 functions, mostly the same ones REDRIVER2 implements (~70): time,
+     threads, keyboard events, window, texture; game controllers and haptics as no-ops.
+   - The method: compile against the real SDL2 headers (`G:\Emulacja\redriver2-miyoo\deps\SDL2-2.30.9`)
+     and implement only what the link errors list.
+   - SCR `miyoo/platform/miyoo_sdl.cpp` + `input_map.cpp` shows how it was adapted for another
+     game.
+2. **The picture: RR2's pan thread + TQ's MI_GFX.**
+   - Yamagi's soft renderer draws 8 bpp and converts it itself into an ARGB8888 texture
+     (`src/client/refresh/soft/sw_main.c`: `SDL_LockTexture`, `SDL_RenderPresent`).
+   - Our `SDL_LockTexture` hands out a buffer in MMA memory, and `SDL_RenderPresent` is one
+     MI_GFX blit (ARGB8888 into the fb0 page, mirrored both ways = 180°), with no CPU work.
+     The code: TQ `miyoo/standalone/tqrun.c`, `gfx_init`/`gfx_blit`/`gfx_shutdown`, including
+     the cleanup at exit (without it, Onion's SDL apps started later show black).
+   - CPU fallback: SCR `miyoo/platform/miyoo_fb.c` `SoftGL_Present` (the same 32-bit format,
+     rotated, written forwards into the uncached mapping).
+   - Pacing: 30 fps = each frame held for two refreshes (`FBIO_WAITFORVSYNC` on the pan thread
+     only, with a fallback): RR2 `miyoo_fb.c` `PanThread` or TQ `present_proc`. Pan back to the
+     start page at exit: TQ `video_shutdown`.
+3. **Sound: RR2's audioserver transport, or TQ's `/dev/dsp` ring.**
+   - Yamagi mixes itself and pulls PCM through an `SDL_OpenAudio` callback (`s_khz 48` gives
+     48 kHz): no mixer needed, only `SDL_OpenAudio`/`SDL_PauseAudio`/`SDL_LockAudio`.
+   - Static binary: a thread that calls the callback and writes blocks to the FIFO, as RR2
+     `al_miyoo.cpp` (`OpenServer`/`ServerIoctl`/`CloseServer`, and `MixThread`'s write loop with
+     EINTR/EAGAIN and the 200 ms drop).
+   - Dynamic binary: TQ `tqrun.c` `audio_init` + `ring_proc` (`/dev/dsp` through libpadsp,
+     drift kept in check by leaving out single frames).
+   - Before a release: the look-ahead limiter, fades around loads and the low-pass for 11/22 kHz
+     samples (miyoo.md section 6; the code is in TQ's core).
+4. **Buttons.**
+   - Key codes: any of the ports (all agree, see above).
+   - MENU = Onion's Game Switcher, POWER = resume save before sleep, the Game Switcher picture
+     and recent list: TQ `tqrun.c` `key_event`, `switcher_prepare`, `write_romscreen`,
+     `onion_recent_rompath`.
+   - Game actions: Quake II binds them itself; ship default binds in a `default.cfg`.
+5. **Static or dynamic: decide first. Recommended: dynamic, TQ's recipe.**
+   - Yamagi loads `ref_soft.so` and `game.so` with dlopen, and MI_GFX needs dlopen of the
+     vendor libraries; a static binary has no working dlopen.
+   - TQ's recipe for the device's glibc 2.28 with the 13.3 toolchain: its own `_start`
+     (`miyoo/standalone/start.S`), `.symver` pins for `dl*` and `pthread_*`, TQ's
+     `glibc_compat` for exp/log/pow and stat, a symbol check as in `miyoo/build/build_core.sh`;
+     no `_GNU_SOURCE`.
+   - That gives MI_GFX, `/dev/dsp` through libpadsp and Yamagi's module loading unchanged.
+   - Static (as RR2) is simpler but means linking the renderer and the game in and presenting
+     with the CPU.
+6. **Speed: TyrQuake's lessons** (Quake II's soft renderer descends from Quake's).
+   - From day one: `timedemo`, a bench script as TQ `miyoo/tools/bench.sh`, and bit-exact
+     screenshot sets (`shots.sh` + `shots_compare.py`) before any optimisation.
+   - What paid in TyrQuake: the surface cache on two threads (+16-23 %), the 8 bpp conversion
+     on both cores, PGO + LTO (`pgo.sh`, ~7 %).
+   - What didn't: miyoo.md section 5, "What didn't pay".
+   - Resolution: 640x480 if fast enough, otherwise lower and scaled by MI_GFX (OpenLara's
+     dynamic resolution, miyoo.md section 8) - only with the owner's yes (no-visual-change rule).
+7. **Tests and diagnostics.**
+   - The emulator: RR2 `miyoo/emu/emu_shim.c` + `miyoo-emu.py` (the most complete copy: it
+     also detects hangs): scripted buttons and screenshots under qemu, CI without the device.
+   - Crash handler with pc/lr and stack addresses for addr2line: RR2 `miyoo_sdl.cpp`.
+   - Watchdog for untested threaded builds, `mshot.sh`, `mssh`, SSH launch rules: the `miyoo`
+     skill.
+8. **Release.**
+   - A zip that mirrors the card: `Roms/PORTS/Games/Quake2/`, shortcut in
+     `Roms/PORTS/Shortcuts/FPS/` with `GameDataFile=pak0.pak` (hidden until the player adds
+     the data), HOME set to the game folder in the launcher, no game data inside.
+   - Packaging examples: TQ `miyoo/standalone/package.sh`, SCR `miyoo/package.sh`.
+   - Then an entry in Port Manager's catalog (open source, native: it fits the rules).
+
+### Order of work
+
+1. Skeleton: Yamagi with SDL2 and the RR2 layer, CPU present, dynamic build by TQ's recipe.
+   Goal: the demo `pak0.pak` from `Roms/PORTS/Games/Quake2/baseq2/` starts with a picture and
+   the buttons.
+2. Sound through the callback, to the FIFO or `/dev/dsp`.
+3. `timedemo` timings and a reference screenshot set.
+4. Present through MI_GFX, checked against the screenshot set (the picture must stay
+   identical).
+5. TyrQuake's optimisations, one at a time, each checked against the shots.
+6. Onion integration (Game Switcher, POWER save), sound polish, release.
