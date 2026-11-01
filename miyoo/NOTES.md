@@ -558,3 +558,30 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     fps**, demo2 42.0 / 42.0 -> **44.1 / 44.1 fps: +5-6 %**; p90 demo1 27.3 -> 24.6 ms, demo2
     31.8 -> 29.3 ms (the heavy frames gain most). Timedemo speed 51.9 / 44.0. Shots 25/25
     identical.
+- **Profile after 2.3** (2026-11-01 13:00, demo1 frames 60-609, `build/prof/mt2_demo1.txt`):
+  main thread 1014 samples, worker 382 (it waits most of the frame). Main thread:
+  R_PolysetDrawSpans8_Opaque 22.8 %, D_DrawSpansPow2 21.0 %, D_DrawZSpans 8.0 %,
+  R_DrawSurface 7.6 %, R_ProcessLeftEdge 5.8 %, R_GenerateSpans 5.1 %, libc 4.7 %: the models
+  were now the largest part left on one thread.
+- **2.4 Models on both threads** (2026-11-01 13:10, tyrquake-miyoo's D_PolysetBeginRecord
+  scheme): R_DrawEntitiesOnList records the triangles that face the view (R_DrawTriangle:
+  the 3 compact vertices, r_affinetridesc, d_pdrawspans, r_aliasblendcolor, the entity);
+  SW_MT_PolyFlush (before a sprite, a beam or a null model, and at the end of each pass)
+  replays them on both threads in order, each drawing only its band's rows (the span drawers
+  still step their edges through every row). Per thread: all of sw_polyset.c's rasterizer
+  state, triangle_spans (the worker allocates its own), r_affinetridesc, d_pdrawspans,
+  r_aliasblendcolor. The edge tables pointed at r_p0..r_p2, which have no constant address
+  per thread: now indices, each thread builds the one it uses (R_UseEdgeTable). The z-damage
+  area the drawers widen goes into a box per thread while replaying (`sw_zdamage`), merged
+  after (min / max: the order doesn't matter).
+  - First version (every thread set up every triangle): demo2 +4 %, demo1 nothing. Then a
+    triangle wholly outside a thread's rows is skipped before its setup: as in play
+    (`build/frames_2026-11-01h/`) demo1 50.6 / 50.1 -> **52.7 / 52.5 fps (+4 %)**, demo2
+    44.1 / 43.7 -> **47.0 / 47.1 fps (+7 %)**; p99 demo1 38.5-43.6 -> 31.5-33.2 ms, demo2
+    41.5-46.1 -> 37.4-38.0 ms. Timedemo speed 54.8 / 47.1. Shots 25/25 identical (also with
+    sw_threads 0).
+  - With `sw_threads 0` the same build gives 38.4 / 33.5 fps: the two threads together
+    (2.1-2.4) are **+37 % / +41 %**.
+- **Where it stands (2026-11-01 13:15)**: 38.5 / 33.5 fps (-O2) -> **52.6 / 47.1 fps as in
+  play (+37 % / +41 %)**, every step pixel for pixel the same. Still to do: 3 specialised
+  loops, PGO (redo the profile), the random 60-180 ms system hiccups.

@@ -30,13 +30,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 int				r_amodels_drawn;
 
-affinetridesc_t	r_affinetridesc;
+SW_TLS affinetridesc_t	r_affinetridesc;
 
 static vec3_t	r_plightvec;
 static vec3_t	r_lerp_frontv, r_lerp_backv, r_lerp_move;
 
 static light3_t	r_ambientlight;
-int		r_aliasblendcolor;
+SW_TLS int		r_aliasblendcolor;
 static vec3_t		r_shadelight;
 
 
@@ -728,7 +728,7 @@ R_AliasSetUpLerpData(entity_t *currententity, dmdl_t *pmdl, float backlerp)
 
 finalvert_t *finalverts = NULL, *finalverts_max = NULL;
 
-extern void (*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
+extern SW_TLS void (*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
 void R_PolysetDrawSpans8_Opaque(const entity_t *currententity, spanpackage_t *pspanpackage);
 void R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage);
 void R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackage);

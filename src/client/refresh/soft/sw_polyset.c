@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // texture (used for Alias models)
 
 #include "header/local.h"
+#include "header/sw_mt.h"
 #include <limits.h>
 
 typedef struct {
@@ -34,50 +35,73 @@ typedef struct {
 	compactvert_t	*prightedgevert2;
 } edgetable;
 
-static int	ubasestep, errorterm, erroradjustup, erroradjustdown;
+/* (per thread: the models are drawn on both, sw_mt.c) */
+static SW_TLS int	ubasestep, errorterm, erroradjustup, erroradjustdown;
 
-static compactvert_t r_p0, r_p1, r_p2;
+static SW_TLS compactvert_t r_p[3];
+#define r_p0 r_p[0]
+#define r_p1 r_p[1]
+#define r_p2 r_p[2]
 
-static int	d_xdenom;
+static SW_TLS int	d_xdenom;
 
-static edgetable *pedgetable;
+static SW_TLS edgetable *pedgetable;
 
-static edgetable edgetables[12] = {
-	{1, &r_p0, &r_p2, &r_p2, 2, &r_p0, &r_p1, &r_p2},
-	{2, &r_p1, &r_p0, &r_p2, 1, &r_p1, &r_p2, &r_p2},
-	{1, &r_p0, &r_p2, &r_p2, 1, &r_p1, &r_p2, &r_p2},	// flat top
-	{1, &r_p1, &r_p0, &r_p0, 2, &r_p1, &r_p2, &r_p0},
-	{2, &r_p0, &r_p2, &r_p1, 1, &r_p0, &r_p1, &r_p1},
-	{1, &r_p2, &r_p1, &r_p1, 1, &r_p2, &r_p0, &r_p0},
-	{1, &r_p2, &r_p1, &r_p1, 2, &r_p2, &r_p0, &r_p1},
-	{2, &r_p2, &r_p1, &r_p0, 1, &r_p2, &r_p0, &r_p0},
-	{1, &r_p1, &r_p0, &r_p0, 1, &r_p1, &r_p2, &r_p2},
-	{1, &r_p2, &r_p1, &r_p1, 1, &r_p0, &r_p1, &r_p1},	// flat top
-	{1, &r_p1, &r_p0, &r_p0, 1, &r_p2, &r_p0, &r_p0},	// flat top
-	{1, &r_p0, &r_p2, &r_p2, 1, &r_p0, &r_p1, &r_p1},
+/* the edge tables as indices into r_p (a thread's r_p has no constant address): each thread
+   builds the one it uses (R_UseEdgeTable); the same vertices as the original's tables */
+static const unsigned char edgetables[12][8] = {
+	{1, 0, 2, 2, 2, 0, 1, 2},
+	{2, 1, 0, 2, 1, 1, 2, 2},
+	{1, 0, 2, 2, 1, 1, 2, 2},	// flat top
+	{1, 1, 0, 0, 2, 1, 2, 0},
+	{2, 0, 2, 1, 1, 0, 1, 1},
+	{1, 2, 1, 1, 1, 2, 0, 0},
+	{1, 2, 1, 1, 2, 2, 0, 1},
+	{2, 2, 1, 0, 1, 2, 0, 0},
+	{1, 1, 0, 0, 1, 1, 2, 2},
+	{1, 2, 1, 1, 1, 0, 1, 1},	// flat top
+	{1, 1, 0, 0, 1, 2, 0, 0},	// flat top
+	{1, 0, 2, 2, 1, 0, 1, 1},
 };
+static SW_TLS edgetable s_edgetable;
+
+static void
+R_UseEdgeTable(int i)
+{
+	const unsigned char *e = edgetables[i];
+
+	s_edgetable.numleftedges = e[0];
+	s_edgetable.pleftedgevert0 = &r_p[e[1]];
+	s_edgetable.pleftedgevert1 = &r_p[e[2]];
+	s_edgetable.pleftedgevert2 = &r_p[e[3]];
+	s_edgetable.numrightedges = e[4];
+	s_edgetable.prightedgevert0 = &r_p[e[5]];
+	s_edgetable.prightedgevert1 = &r_p[e[6]];
+	s_edgetable.prightedgevert2 = &r_p[e[7]];
+	pedgetable = &s_edgetable;
+}
 
 // FIXME: some of these can become statics
-static int	a_sstepxfrac, a_tstepxfrac, a_ststepxwhole;
-static int	r_sstepx, r_tstepx, r_sstepy, r_tstepy;
-static light3_t	r_lstepx, r_lstepy;
-static zvalue_t	r_zistepx, r_zistepy;
-static int	d_aspancount;
+static SW_TLS int	a_sstepxfrac, a_tstepxfrac, a_ststepxwhole;
+static SW_TLS int	r_sstepx, r_tstepx, r_sstepy, r_tstepy;
+static SW_TLS light3_t	r_lstepx, r_lstepy;
+static SW_TLS zvalue_t	r_zistepx, r_zistepy;
+static SW_TLS int	d_aspancount;
 
-static spanpackage_t	*d_pedgespanpackage;
+static SW_TLS spanpackage_t	*d_pedgespanpackage;
 
-spanpackage_t	*triangle_spans, *triangles_max;
+SW_TLS spanpackage_t	*triangle_spans, *triangles_max;	// (the worker has its own: sw_mt.c)
 
-static int	d_sfrac, d_tfrac;
-static light3_t d_light;
-static zvalue_t	d_zi;
-static int	d_ptexextrastep, d_sfracextrastep;
-static int	d_tfracextrastep, d_ptexbasestep;
-static light3_t	d_lightbasestep, d_lightextrastep;
-static int	d_sfracbasestep, d_tfracbasestep;
-static zvalue_t	d_ziextrastep, d_zibasestep;
+static SW_TLS int	d_sfrac, d_tfrac;
+static SW_TLS light3_t d_light;
+static SW_TLS zvalue_t	d_zi;
+static SW_TLS int	d_ptexextrastep, d_sfracextrastep;
+static SW_TLS int	d_tfracextrastep, d_ptexbasestep;
+static SW_TLS light3_t	d_lightbasestep, d_lightextrastep;
+static SW_TLS int	d_sfracbasestep, d_tfracbasestep;
+static SW_TLS zvalue_t	d_ziextrastep, d_zibasestep;
 
-void	(*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
+SW_TLS void	(*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
 
 static void R_PolysetSetEdgeTable(void);
 static void R_RasterizeAliasPolySmooth(const entity_t *currententity);
@@ -156,6 +180,11 @@ R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalv
 		return;
 
 	d_xdenom = ( dv0_ac * dv1_ab ) - ( dv0_ab * dv1_ac );
+
+	if ( d_xdenom < 0 && SW_MT_RecordTriangle(currententity, a, b, c) )
+	{
+		return;	/* drawn later on both threads (sw_mt.c) */
+	}
 
 	if ( d_xdenom < 0 )
 	{
@@ -453,7 +482,7 @@ R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackag
 			errorterm -= erroradjustdown;
 		}
 
-		if (lcount > 0)
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
 			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
 
@@ -520,7 +549,7 @@ R_PolysetDrawSpansConstant8_33(const entity_t *currententity, spanpackage_t *psp
 			errorterm -= erroradjustdown;
 		}
 
-		if (lcount > 0)
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
 			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
 
@@ -570,7 +599,7 @@ R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackag
 			errorterm -= erroradjustdown;
 		}
 
-		if (lcount > 0)
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
 			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
 			qboolean	zdamaged = false;
@@ -649,7 +678,7 @@ R_PolysetDrawSpansConstant8_66(const entity_t *currententity, spanpackage_t *psp
 			errorterm -= erroradjustdown;
 		}
 
-		if (lcount > 0)
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
 			int	pos_shift = (pspanpackage->v * vid_buffer_width) + pspanpackage->u;
 			qboolean	zdamaged = false;
@@ -702,7 +731,7 @@ R_PolysetDrawSpans8_Opaque (const entity_t *currententity, spanpackage_t *pspanp
 			errorterm -= erroradjustdown;
 		}
 
-		if (lcount > 0)
+		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
 		{
 			int		lsfrac, ltfrac;
 			pixel_t		*lpdest;
@@ -961,9 +990,9 @@ R_PolysetSetEdgeTable(void)
 		if (r_p0.v == r_p1.v)
 		{
 			if (r_p0.v < r_p2.v)
-				pedgetable = &edgetables[2];
+				R_UseEdgeTable(2);
 			else
-				pedgetable = &edgetables[5];
+				R_UseEdgeTable(5);
 
 			return;
 		}
@@ -976,18 +1005,18 @@ R_PolysetSetEdgeTable(void)
 	if (r_p0.v == r_p2.v)
 	{
 		if (edgetableindex)
-			pedgetable = &edgetables[8];
+			R_UseEdgeTable(8);
 		else
-			pedgetable = &edgetables[9];
+			R_UseEdgeTable(9);
 
 		return;
 	}
 	else if (r_p1.v == r_p2.v)
 	{
 		if (edgetableindex)
-			pedgetable = &edgetables[10];
+			R_UseEdgeTable(10);
 		else
-			pedgetable = &edgetables[11];
+			R_UseEdgeTable(11);
 
 		return;
 	}
@@ -998,5 +1027,5 @@ R_PolysetSetEdgeTable(void)
 	if (r_p1.v > r_p2.v)
 		edgetableindex += 4;
 
-	pedgetable = &edgetables[edgetableindex];
+	R_UseEdgeTable(edgetableindex);
 }

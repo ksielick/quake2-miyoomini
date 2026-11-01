@@ -70,4 +70,23 @@ qboolean SW_MT_DeferBuild(const drawsurf_t *ds);
 void R_BuildLightMap(drawsurf_t *drawsurf);	/* sw_light.c */
 void R_DrawSurface(drawsurf_t *drawsurf);	/* sw_surf.c */
 
+/*
+ * Models on both threads (tyrquake-miyoo's D_PolysetBeginRecord & co): between
+ * SW_MT_PolyBegin and SW_MT_PolyEnd, R_DrawTriangle records each triangle that faces the
+ * view (its vertices, the skin, the span drawer, the shell colour); SW_MT_PolyFlush (also
+ * End) draws them on both threads, each rasterizing all of them in order but drawing only the
+ * rows of its band. Flush before drawing anything else that uses the z-buffer (sprites,
+ * beams). The z-damage area the drawers widen is kept per thread while replaying
+ * (sw_zdamage) and merged after.
+ */
+void SW_MT_PolyBegin(void);
+void SW_MT_PolyFlush(void);
+void SW_MT_PolyEnd(void);
+qboolean SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t *b,
+	const finalvert_t *c);
+void R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalvert_t *b,
+	const finalvert_t *c);
+/* while replaying models: this thread's z-damage box (minu, maxu, minv, maxv), else NULL */
+extern SW_TLS int *sw_zdamage;
+
 #endif

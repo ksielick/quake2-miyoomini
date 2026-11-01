@@ -367,6 +367,193 @@ SW_MT_CacheOverwrite(surfcache_t *c)
 	}
 }
 
+/* ---- models on both threads (see sw_mt.h) */
+
+SW_TLS int *sw_zdamage;
+
+typedef struct
+{
+	const entity_t *entity;
+	compactvert_t v[3];
+	affinetridesc_t skin;
+	void (*drawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
+	int blendcolor;
+} sw_tricmd_t;
+
+static sw_tricmd_t *tris;
+static int numtris, maxtris;
+static qboolean poly_recording;
+static float poly_split[MAX_SPLIT_SLOTS];
+static int poly_slot, poly_frame = -1;
+extern int r_numallocatedtriangles;
+extern SW_TLS void (*d_pdrawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
+static SW_TLS int worker_tris;	/* the size of this thread's own triangle_spans (the worker) */
+
+typedef struct
+{
+	int v[3];
+	double ms[2];
+	int box[2][4];	/* each part's z-damage: minu, maxu, minv, maxv */
+} polyjob_t;
+
+static void
+poly_replay(int part, void *arg)
+{
+	polyjob_t *j = arg;
+	const double t0 = now_ms();
+	int i;
+
+	if (part && worker_tris != r_numallocatedtriangles)
+	{
+		free(triangle_spans);
+		triangle_spans = malloc(r_numallocatedtriangles * sizeof(spanpackage_t));
+		worker_tris = triangle_spans ? r_numallocatedtriangles : 0;
+		triangles_max = triangle_spans ? triangle_spans + r_numallocatedtriangles : NULL;
+	}
+
+	j->box[part][0] = vid_buffer_width;
+	j->box[part][1] = 0;
+	j->box[part][2] = vid_buffer_height;
+	j->box[part][3] = 0;
+	sw_zdamage = j->box[part];
+	sw_band_v0 = j->v[part];
+	sw_band_v1 = j->v[part + 1];
+	sw_mt_replaying = 1;
+	if (triangle_spans)
+	{
+		for (i = 0; i < numtris; i++)
+		{
+			const sw_tricmd_t *t = &tris[i];
+			finalvert_t fv[3];
+			int vmin = t->v[0].v, vmax = t->v[0].v;
+
+			/* a triangle wholly outside this thread's rows: nothing to set up */
+			if (t->v[1].v < vmin) vmin = t->v[1].v;
+			if (t->v[1].v > vmax) vmax = t->v[1].v;
+			if (t->v[2].v < vmin) vmin = t->v[2].v;
+			if (t->v[2].v > vmax) vmax = t->v[2].v;
+			if (vmax < sw_band_v0 || vmin >= sw_band_v1)
+			{
+				continue;
+			}
+
+			fv[0].cv = t->v[0];
+			fv[1].cv = t->v[1];
+			fv[2].cv = t->v[2];
+			r_affinetridesc = t->skin;
+			d_pdrawspans = t->drawspans;
+			r_aliasblendcolor = t->blendcolor;
+			R_DrawTriangle(t->entity, &fv[0], &fv[1], &fv[2]);
+		}
+	}
+	sw_mt_replaying = 0;
+	sw_band_v0 = 0;
+	sw_band_v1 = 0x7fffffff;
+	sw_zdamage = NULL;
+	j->ms[part] = now_ms() - t0;
+}
+
+void
+SW_MT_PolyBegin(void)
+{
+	numtris = 0;
+	poly_recording = sw_threads && sw_threads->value;
+}
+
+void
+SW_MT_PolyFlush(void)
+{
+	polyjob_t j;
+	int slot, k;
+	float f;
+
+	if (!numtris)
+	{
+		return;
+	}
+	poly_recording = false;	/* (R_DrawTriangle draws now) */
+
+	if (poly_frame != r_framecount)
+	{
+		poly_frame = r_framecount;
+		poly_slot = 0;
+	}
+	slot = poly_slot < MAX_SPLIT_SLOTS ? poly_slot : MAX_SPLIT_SLOTS - 1;
+	poly_slot++;
+	f = poly_split[slot] > 0.0f ? poly_split[slot] : 0.5f;
+
+	j.v[0] = r_refdef.vrect.y;
+	j.v[2] = r_refdef.vrect.y + r_refdef.vrect.height;
+	j.v[1] = j.v[0] + (int)((j.v[2] - j.v[0]) * f + 0.5f);
+	j.ms[0] = j.ms[1] = 0.0;
+	if (!SW_MT_RunBoth(poly_replay, &j))
+	{
+		poly_replay(0, &j);
+		poly_replay(1, &j);
+	}
+	else if (j.ms[0] > 0.05 && j.ms[1] > 0.05)
+	{
+		const float cm = (float)(j.ms[0] / f), cw = (float)(j.ms[1] / (1.0f - f));
+		f = 0.75f * f + 0.25f * (cw / (cm + cw));
+		f = f < 0.1f ? 0.1f : f > 0.9f ? 0.9f : f;
+	}
+	poly_split[slot] = f;
+
+	/* the two z-damage boxes into the global one (VID_DamageZBuffer: min / max, so the
+	   order doesn't matter) */
+	for (k = 0; k < 2; k++)
+	{
+		if (j.box[k][1] >= j.box[k][0] && j.box[k][3] >= j.box[k][2])
+		{
+			VID_DamageZBuffer(j.box[k][0], j.box[k][2]);
+			VID_DamageZBuffer(j.box[k][1], j.box[k][3]);
+		}
+	}
+
+	numtris = 0;
+	poly_recording = sw_threads && sw_threads->value;
+}
+
+void
+SW_MT_PolyEnd(void)
+{
+	SW_MT_PolyFlush();
+	poly_recording = false;
+}
+
+qboolean
+SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t *b,
+	const finalvert_t *c)
+{
+	sw_tricmd_t *t;
+
+	if (!poly_recording || sw_mt_replaying)
+	{
+		return false;
+	}
+	if (numtris == maxtris)
+	{
+		int n = maxtris ? maxtris * 2 : 1024;
+		sw_tricmd_t *p = realloc(tris, n * sizeof(*tris));
+
+		if (!p)
+		{
+			return false;	/* out of memory: drawn now */
+		}
+		tris = p;
+		maxtris = n;
+	}
+	t = &tris[numtris++];
+	t->entity = e;
+	t->v[0] = a->cv;
+	t->v[1] = b->cv;
+	t->v[2] = c->cv;
+	t->skin = r_affinetridesc;
+	t->drawspans = d_pdrawspans;
+	t->blendcolor = r_aliasblendcolor;
+	return true;
+}
+
 qboolean
 SW_MT_RunBoth(void (*fn)(int part, void *arg), void *arg)
 {

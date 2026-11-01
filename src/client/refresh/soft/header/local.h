@@ -352,7 +352,7 @@ extern float	r_aliasuvscale; // scale-up factor for screen u and v
 				//  on Alias vertices passed to driver
 extern qboolean	r_dowarp;
 
-extern affinetridesc_t	r_affinetridesc;
+extern SW_TLS affinetridesc_t	r_affinetridesc;
 
 void D_WarpScreen(void);
 
@@ -522,7 +522,7 @@ typedef struct {
 	light3_t	light;
 	zvalue_t	zi;
 } spanpackage_t;
-extern spanpackage_t	*triangle_spans, *triangles_max;
+extern SW_TLS spanpackage_t	*triangle_spans, *triangles_max;
 
 void R_PolysetDrawSpans8_33(const entity_t *currententity, spanpackage_t *pspanpackage);
 void R_PolysetDrawSpans8_66(const entity_t *currententity, spanpackage_t *pspanpackage);
@@ -536,7 +536,7 @@ extern int	r_numallocatedverts;
 extern int	r_numallocatededgebasespans;
 extern finalvert_t	*finalverts, *finalverts_max;
 
-extern	int	r_aliasblendcolor;
+extern SW_TLS int	r_aliasblendcolor;
 
 extern float	aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
 

@@ -233,6 +233,20 @@ Mark VID Z buffer as damaged and need to be recalculated
 void
 VID_DamageZBuffer(int u, int v)
 {
+	if (sw_zdamage)
+	{
+		/* (sw_mt.c: models replayed on two threads, each into its own box, merged after) */
+		if (sw_zdamage[0] > u)
+			sw_zdamage[0] = u;
+		if (sw_zdamage[1] < u)
+			sw_zdamage[1] = u;
+		if (sw_zdamage[2] > v)
+			sw_zdamage[2] = v;
+		if (sw_zdamage[3] < v)
+			sw_zdamage[3] = v;
+		return;
+	}
+
 	// update U
 	if (vid_zminu > u)
 	{
@@ -838,6 +852,10 @@ R_DrawEntitiesOnList (qboolean translucent)
 		return false;
 	}
 
+	/* Miyoo Mini: the models' triangles recorded and drawn on both threads (sw_mt.c);
+	   drawn before anything else that uses the z-buffer, and at the end */
+	SW_MT_PolyBegin();
+
 	if (!translucent)
 	{
 		// all bmodels have already been drawn by the edge list
@@ -857,6 +875,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				modelorg[1] = -r_origin[1];
 				modelorg[2] = -r_origin[2];
 				VectorCopy(vec3_origin, r_entorigin);
+				SW_MT_PolyFlush();
 				R_DrawBeam(currententity);
 			}
 			else
@@ -864,6 +883,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				const model_t *currentmodel = currententity->model;
 				if (!currentmodel)
 				{
+					SW_MT_PolyFlush();
 					R_DrawNullModel();
 					continue;
 				}
@@ -873,6 +893,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				switch (currentmodel->type)
 				{
 				case mod_sprite:
+					SW_MT_PolyFlush();
 					R_DrawSprite(currententity, currentmodel);
 					break;
 
@@ -886,6 +907,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				default:
 					Com_Printf("%s: Bad modeltype %d\n",
 						__func__, currentmodel->type);
+					SW_MT_PolyEnd();
 					return false;
 				}
 			}
@@ -908,6 +930,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				modelorg[1] = -r_origin[1];
 				modelorg[2] = -r_origin[2];
 				VectorCopy(vec3_origin, r_entorigin);
+				SW_MT_PolyFlush();
 				R_DrawBeam(currententity);
 			}
 			else
@@ -915,6 +938,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				const model_t *currentmodel = currententity->model;
 				if (!currentmodel)
 				{
+					SW_MT_PolyFlush();
 					R_DrawNullModel();
 					continue;
 				}
@@ -924,6 +948,7 @@ R_DrawEntitiesOnList (qboolean translucent)
 				switch (currentmodel->type)
 				{
 				case mod_sprite:
+					SW_MT_PolyFlush();
 					R_DrawSprite(currententity, currentmodel);
 					break;
 
@@ -937,12 +962,14 @@ R_DrawEntitiesOnList (qboolean translucent)
 				default:
 					Com_Printf("%s: Bad modeltype %d\n",
 						__func__, currentmodel->type);
+					SW_MT_PolyEnd();
 					return false;
 				}
 			}
 		}
 	}
 
+	SW_MT_PolyEnd();
 	return anytranslucent;
 }
 
