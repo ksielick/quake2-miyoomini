@@ -480,11 +480,50 @@ static void SaveShot(const SDL_Texture *t)
 	}
 }
 
+/* Frame times for stutter checks (miyoo/tools/bench.sh FRAMES=1, miyoo/tools/frametimes.py):
+ * MIYOO_FRAMES=file writes the time from each present to the next, in microseconds, one per
+ * line, kept in memory and written at exit (no file writes while it runs). */
+#define FRAMES_MAX 20000
+static uint32_t *s_frameUs;
+static int s_frameCount;
+static const char *s_framesPath;
+
+static void SaveFrames(void)
+{
+	FILE *f = fopen(s_framesPath, "w");
+	int i;
+
+	if (!f)
+		return;
+	for (i = 0; i < s_frameCount; i++)
+		fprintf(f, "%u\n", (unsigned)s_frameUs[i]);
+	fclose(f);
+}
+
+static void FrameTime(void)
+{
+	static int init;
+	static uint64_t last;
+	const uint64_t now = NowNs();
+
+	if (!init)
+	{
+		init = 1;
+		s_framesPath = getenv("MIYOO_FRAMES");
+		if (s_framesPath && (s_frameUs = malloc(FRAMES_MAX * sizeof(*s_frameUs))))
+			atexit(SaveFrames);
+	}
+	if (s_frameUs && last && s_frameCount < FRAMES_MAX)
+		s_frameUs[s_frameCount++] = (uint32_t)((now - last) / 1000);
+	last = now;
+}
+
 void MiyooProf_Frame(void);	/* miyoo_prof.c (MIYOO_PROF) */
 
 void SDL_RenderPresent(SDL_Renderer *renderer)
 {
 	MiyooProf_Frame();
+	FrameTime();
 	if (!s_shown)
 		return;
 	SaveShot(s_shown);

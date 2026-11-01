@@ -11,6 +11,8 @@
 # picture, not waited for), quitting at the demo's end (nextdemo quit). The game's own line
 # "N frames, S seconds: F fps" is the result; the clock, temperature and battery are noted.
 # EXTRA: more console settings for every run (e.g. EXTRA="+set sw_drawflat 1").
+# BINDIR: run another build's quake2 and ref_soft.so from that directory (e.g. $GAME/test_o3).
+# FRAMES=1: each frame's time to /tmp/q2frames_<FRAMESET>_<demo>.txt (miyoo/tools/frametimes.py).
 # SHOTS=N: every Nth frame saved to <game>/shots/<SET>/<demo>/NNNNN.argb (SET default "new"),
 # for miyoo/tools/shots_compare.py on the PC (fetch them over SMB: Roms\PORTS\Games\Quake2\shots).
 # The shots cost time: such runs are not timings.
@@ -43,12 +45,22 @@ for d in $DEMOS; do
 		rm -rf "$MIYOO_SHOTS_DIR"
 		mkdir -p "$MIYOO_SHOTS_DIR"
 	fi
-	./quake2 +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
+	[ -n "$FRAMES" ] && export MIYOO_FRAMES="/tmp/q2frames_${FRAMESET:-new}_$d.txt"
+	# BINDIR: another build (its quake2 and ref_soft.so; the data stays the current dir's)
+	"${BINDIR:-.}/quake2" +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
 		+set vid_fullscreen 0 +set s_khz 48 $EXTRA +set timedemo 1 +set nextdemo quit \
-		+demomap "$d.dm2" > "/tmp/q2bench_$d.log" 2>&1
+		+demomap "$d.dm2" > "/tmp/q2bench_$d.log" 2>&1 &
+	P=$!
+	# the peak memory (VmHWM), read once a second while it runs
+	( h=; while kill -0 $P 2>/dev/null; do
+		x=$(awk '/^VmHWM/ { print $2 }' /proc/$P/status 2>/dev/null); [ -n "$x" ] && h=$x
+		sleep 1; done; echo "$h" > /tmp/q2bench_hwm ) &
+	S=$!
+	wait $P
 	rc=$?
+	wait $S
 	kill $W 2>/dev/null
 	r=$(grep -E '^[0-9]+ frames, ' "/tmp/q2bench_$d.log" | tail -n 1)
-	echo "$d: ${r:-no result (exit $rc), see /tmp/q2bench_$d.log}" >> "$OUT"
+	echo "$d: ${r:-no result (exit $rc), see /tmp/q2bench_$d.log}, peak $(cat /tmp/q2bench_hwm) kB" >> "$OUT"
 done
 echo "# end $(cat /sys/devices/system/cpu/cpufreq/temp_out 2>/dev/null)" >> "$OUT"

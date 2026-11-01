@@ -355,3 +355,82 @@ Paths below: RR2 = `G:\Emulacja\redriver2-miyoo\repos\REDRIVER2`, SCR =
    identical).
 5. TyrQuake's optimisations, one at a time, each checked against the shots.
 6. Onion integration (Game Switcher, POWER save), sound polish, release.
+
+## Faster frames: the plan and the results (2026-11-01)
+
+Start: demo1 38.8 fps, demo2 33.6 fps (640x480, 1200 MHz, -O2, MI_GFX present, the
+R_ApplyLight fix). The profile of demo1 (step 5 above): D_DrawSpansPow2 22 %, D_CacheSurface
+13 %, R_PolysetDrawSpans8_Opaque 12 %, RE_EndFrame (8 bpp -> 32 bpp) 10 %, D_DrawZSpans 6 %.
+Every step: timedemos (`miyoo/tools/bench_ab.sh`, settings alternated in one session) and the
+shots against `build/shots/ref` (bit-exact, the owner's rule). Owner's order, 2026-11-01.
+
+### The ideas, in order
+
+1. **Cheap, picture unchanged**
+   1. A bigger surface cache. Yamagi's size at 640x480 is ~1.5 MB (`R_InitCaches`: 768 KB at
+      320x240 plus 3 bytes per extra pixel); TyrQuake-Miyoo's is 10 MB. A cache too small
+      for a frame rebuilds lit surfaces (D_CacheSurface). Test with `sw_surfcacheoverride`
+      (bytes); watch the peak memory (~103 MB RAM, ~5 MB free under Onion).
+   2. Compiler: -O3, LTO, PGO (tyrquake-miyoo: ~7 % together, shots identical with
+      `-ffp-contract=off`).
+   3. RE_CopyFrame (the 8 -> 32 bpp pass): 4 pixels per 32-bit load, width and stride in
+      locals (TyrQuake's VID_Update).
+2. **The second core** (TyrQuake-Miyoo: ~1.45x)
+   1. A worker thread on core 1 (spin then `sched_yield`, then a condvar), first used for
+      RE_CopyFrame in two halves (~1.5 ms).
+   2. Spans and z spans (~28 %): record per frame, both threads replay it for the upper and
+      lower band, the split row moved towards equal times.
+   3. Surface cache builds on both threads.
+   4. Alias models (polysets) on both threads.
+3. **Specialised loops**: D_DrawSpansPow2 checks the texture filter and the adaptive step
+   for every span; versions per case. Model spans: the skin as pskin + t * skinwidth
+   (TyrQuake). dethrace got 25 -> 38.6 fps from such specialisations.
+4. **Experiments that need the owner's yes**
+   - MI_GFX with an 8-bit palette source (I8 -> ARGB8888), if the SDK has it: the 8 -> 32
+     pass would leave the CPU and the picture would stay the same. Unknown: a short test.
+   - RGB565 output as TyrQuake (half the writes; colours lose their low bits: a visible
+     change).
+   - A resolution option (480x360, 320x240, scaled by MI_GFX): a player's choice.
+5. **To check**: OGG music decoding runs in the game thread (TyrQuake: ~1 ms on a thread);
+   first see whether the tracks are on the card.
+
+Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step by step.
+
+### Results
+
+- **1.1 Surface cache size: no gain, not taken** (2026-11-01 10:05, two rounds alternated,
+  1200 MHz, 74-79 °C, charging at 67 %; `bench.sh` now notes the peak memory, VmHWM):
+
+  | sw_surfcacheoverride | demo1 | demo2 | peak memory |
+  |---|---|---|---|
+  | default (~1.5 MB) | 38.5 / 38.5 fps | 33.5 / 33.4 fps | 69.9 / 70.5 MB |
+  | 4 MB | 38.7 / 38.6 | 34.1 / 33.7 | 72.3 / 72.4 MB |
+  | 8 MB | 38.2 / 38.5 | 33.8 / 33.8 | 74.9 / 75.5 MB |
+
+  Within the noise (at most ~1 % in demo2) for 2-5 MB more memory: the cache doesn't
+  thrash in these demos; D_CacheSurface's 13 % is surfaces built because they're seen new
+  or their light changed.
+- **Frame pacing too (owner, 2026-11-01: frame pacing matters as much as fps).** Each
+  frame's time is logged now: `MIYOO_FRAMES=file` (`miyoo_sdl.c`, kept in memory, written at
+  exit), `bench.sh FRAMES=1`, `miyoo/tools/frametimes.py` (mean, p50/p90/p99/p99.9, longest,
+  frames over 50/100 ms; the first 50 frames left out). Timedemo frames (no frame limit), so
+  these are render times, not the panel's pacing.
+- **1.1 again, with frame times, and 1.2 -O3 + LTO** (2026-11-01 10:13, two rounds A B C A B
+  C, 1200 MHz, 74-78 °C, charging at 75 %; files in `build/frames_2026-11-01a/`):
+
+  | | demo1 fps | demo2 fps | demo1 p99 / max ms, >50 ms | demo2 p99 / max ms, >50 ms |
+  |---|---|---|---|---|
+  | A: -O2 | 38.2 / 38.4 | 33.5 / 33.6 | 52.2 / 84.6, 10 · 43.5 / 58.9, 4 | 50.4 / 62.3, 6 · 48.2 / 58.2, 5 |
+  | B: -O2, 4 MB cache | 38.4 / 38.6 | 33.9 / 33.9 | 42.6 / 53.2, 1 · 45.0 / 54.5, 2 | 49.7 / 58.5, 4 · 50.2 / 77.9, 6 |
+  | C: -O3 + LTO | **40.0 / 40.3** | **34.9 / 34.9** | 40.6 / 44.0, 0 · 40.5 / 47.8, 0 | 53.8 / 62.3, 8 · 50.6 / 62.0, 6 |
+
+  - The long frames are the demos' content: in demo2 the same frames (331-333, 345-346, 389,
+    546-548, 593) take 45-62 ms in every variant and round. demo1's runs of 50-85 ms frames
+    (233-241, 634-638) came only in the very first run after MainUI quit (A1): a cold start
+    (files read from the card the first time). The rest are single 45-60 ms frames at random
+    places: the system. So the bigger cache doesn't take the stutters away either: not
+    taken. Only a faster renderer shortens the heavy frames.
+  - -O3 + LTO (ref_soft.so only; `OPT=-O3 LTO=1 build_miyoo.sh`): **+4-5 %**, demo1's
+    longest frames shorter. LTO needed tyrquake-miyoo's `GLIBC_COMPAT_WRAP` (the .symver
+    pins are lost in LTO units: the build's glibc check caught `pow@GLIBC_2.29`), plus
+    `fmod`. Shots: still to check.

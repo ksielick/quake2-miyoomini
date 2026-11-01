@@ -23,7 +23,9 @@ __asm__(".symver exp2,exp2@GLIBC_2.4");
 __asm__(".symver log2,log2@GLIBC_2.4");
 __asm__(".symver pthread_create,pthread_create@GLIBC_2.4");
 __asm__(".symver pthread_join,pthread_join@GLIBC_2.4");
+__asm__(".symver fmod,fmod@GLIBC_2.4");	/* (Quake II) */
 
+double __wrap_fmod(double x, double y) { return fmod(x, y); }
 double __wrap_exp(double x) { return exp(x); }
 double __wrap_log(double x) { return log(x); }
 double __wrap_pow(double x, double y) { return pow(x, y); }

@@ -18,6 +18,13 @@
 # src_rebuild/platform/Miyoo/miyoo_sdl.cpp). The executable exports them (-rdynamic) to
 # ref_soft.so.
 # TC: the toolchain's bin directory. SDL2_INC: the SDL2 headers.
+# Optimisation (tyrquake-miyoo's build_core.sh and pgo.sh; see miyoo/tools/pgo.sh):
+#   OPT: the optimisation flags (default -O2);
+#   LTO=1: link-time optimisation for ref_soft.so (where the frame's time goes);
+#   PGO=gen: an instrumented build writing its profile to /tmp/pgo on the device;
+#   PGO=use: a build with the profile in miyoo/pgo/<target>/*.gcda.
+#   -dumpdir miyoo/pgo/<target>/ (relative, per target: the three link some of the same
+#   sources) names each object's profile, so a profile made in one out_dir fits another.
 set -e
 REPO=$(cd "$(dirname "$0")/../.." && (pwd -W 2>/dev/null || pwd))	# (G:/... for the Windows compiler)
 OUT=${1:-$REPO/build/miyoo}
@@ -61,7 +68,20 @@ GAME="src/common/shared/flash.c src/common/shared/rand.c src/common/shared/share
 $(find src/game -name '*.c' | sort | tr '\n' ' ') miyoo/build/glibc_compat.c"
 
 # --- flags (the Makefile's, for ARMv7 hard-float; -fsigned-char: the code is tested on x86)
-CFLAGS="-O2 -Wall -fomit-frame-pointer -fno-strict-aliasing -fwrapv -fvisibility=hidden
+OPT=${OPT:--O2}
+case "$PGO" in
+gen) PGOF="-fprofile-generate=/tmp/pgo -fprofile-update=atomic" ;;
+use) PGOF="-fprofile-use -fprofile-correction -Wno-missing-profile" ;;
+"") PGOF="" ;;
+*) echo "PGO=gen or PGO=use" >&2; exit 1 ;;
+esac
+LTOF=""
+LTOWRAP=""
+# LTO loses the force-included .symver pins: glibc_compat.c (no LTO) binds them and the
+# LTO units reach it through --wrap (tyrquake-miyoo's GLIBC_COMPAT_WRAP)
+[ -n "$LTO" ] && LTOF="-flto -DGLIBC_COMPAT_WRAP" &&
+	LTOWRAP="-Wl,--wrap=exp,--wrap=log,--wrap=pow,--wrap=exp2,--wrap=log2,--wrap=fmod,--wrap=pthread_create,--wrap=pthread_join"
+CFLAGS="$OPT $PGOF -Wall -fomit-frame-pointer -fno-strict-aliasing -fwrapv -fvisibility=hidden
 -ffp-contract=off -fsigned-char -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 -Wno-unused-result -Wno-format-truncation
 -DYQ2OSTYPE=\\\"Linux\\\" -DYQ2ARCH=\\\"arm\\\" -DNOUNCRYPT -DMIYOO_MINI
@@ -71,7 +91,9 @@ mkdir -p "$OUT/obj" "$OUT/baseq2"
 # Yamagi includes <SDL2/SDL.h>: the headers as include/SDL2/
 [ -f "$OUT/include/SDL2/SDL.h" ] || { mkdir -p "$OUT/include/SDL2"; cp "$SDL2_INC"/*.h "$OUT/include/SDL2/"; }
 echo $CFLAGS > "$OUT/cflags.new"
-cmp -s "$OUT/cflags.new" "$OUT/cflags.rsp" || { mv "$OUT/cflags.new" "$OUT/cflags.rsp"; FORCE=1; }
+echo "LTO=$LTO" >> "$OUT/cflags.new"	# (the stamp: any change rebuilds all)
+cmp -s "$OUT/cflags.new" "$OUT/cflags.stamp" || { cp "$OUT/cflags.new" "$OUT/cflags.stamp"; FORCE=1; }
+echo $CFLAGS > "$OUT/cflags.rsp"
 rm -f "$OUT/cflags.new"
 export CC RSP="$OUT/cflags.rsp"
 
@@ -82,22 +104,28 @@ compile() {
 	for s in "$@"; do
 		o="$OUT/obj/$t/$(echo "$s" | tr '/' '_' | sed 's/\.c$/.o/')"
 		if [ ! -f "$o" ] || [ "$s" -nt "$o" ] || [ -n "$FORCE" ]; then
-			echo "$s $o${x:+ $x}"	# (no trailing blank: xargs -L would join the next line)
+			xs=$x
+			# glibc_compat.c's .symver pins must not go through LTO (they'd be lost)
+			[ "$s" = miyoo/build/glibc_compat.c ] && xs="$xs -fno-lto"
+			echo "$s $o -dumpdir miyoo/pgo/$t/ -frandom-seed=$s${xs:+ $xs}"	# (no trailing blank: xargs -L would join the next line)
 		fi
-	done | xargs -r -P "$JOBS" -L 1 sh -c 'echo "  CC $0"; "$CC" @"$RSP" $2 $3 -c "$0" -o "$1"'
+	done | xargs -r -P "$JOBS" -L 1 sh -c 'echo "  CC $0"; "$CC" @"$RSP" $2 $3 $4 $5 $6 $7 $8 $9 -c "$0" -o "$1"'
 }
 compile client "" $CLIENT
-compile ref_soft "-fPIC" $REFSOFT
+compile ref_soft "-fPIC${LTOF:+ $LTOF}" $REFSOFT	# (no trailing blank, see above)
 compile game "-fPIC" $GAME
 
+CPUF="-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
 LIBS="-Wl,--wrap=stat -lm -Wl,--no-as-needed -l:libdl.so.2 -l:libpthread.so.0 -l:librt.so.1"
 echo "  LD quake2"
-"$CC" -no-pie -nostartfiles -rdynamic -static-libgcc -o "$OUT/quake2" miyoo/build/start.S \
-	-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard "$OUT"/obj/client/*.o $LIBS
+"$CC" -no-pie -nostartfiles -rdynamic -static-libgcc $PGOF -o "$OUT/quake2" miyoo/build/start.S \
+	$CPUF "$OUT"/obj/client/*.o $LIBS
 echo "  LD ref_soft.so"
-"$CC" -shared -static-libgcc -o "$OUT/ref_soft.so" "$OUT"/obj/ref_soft/*.o -Wl,--wrap=stat -lm
+# (with LTO the code is generated here: the compile flags again)
+"$CC" -shared -static-libgcc $PGOF ${LTOF:+$LTOF $OPT $CPUF -fPIC -fomit-frame-pointer -fno-strict-aliasing -fwrapv -ffp-contract=off -fsigned-char -fvisibility=hidden $LTOWRAP} \
+	-o "$OUT/ref_soft.so" "$OUT"/obj/ref_soft/*.o -Wl,--wrap=stat -lm
 echo "  LD baseq2/game.so"
-"$CC" -shared -static-libgcc -o "$OUT/baseq2/game.so" "$OUT"/obj/game/*.o -Wl,--wrap=stat -lm
+"$CC" -shared -static-libgcc $PGOF -o "$OUT/baseq2/game.so" "$OUT"/obj/game/*.o -Wl,--wrap=stat -lm
 
 # the Miyoo has glibc 2.28: no symbol may need a newer version
 bad=0
