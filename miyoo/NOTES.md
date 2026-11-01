@@ -546,3 +546,15 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     thread, CPU pass: `sw_threads 0`, `MIYOO_GFX_I8=0`), made twice: identical. Against it
     the two-thread build, with sw_threads 1 and 0: **25/25 identical**.
   - `/tmp` is emptied by a reboot: copy bench.sh and bench_ab.sh with every step script.
+- **2.3 Surface caches built on both threads** (2026-11-01 13:00): while D_DrawSurfaces
+  records, D_CacheSurface allocates the block as before but hands the build (R_BuildLightMap +
+  R_DrawSurface) to sw_mt.c (SW_MT_DeferBuild: a copy of the drawsurf_t). Each flush first
+  builds them on both threads (an atomic job counter, as tyrquake's build_caches), then
+  replays the spans. Per thread now: `blocklights` / `blocklight_max` (the worker allocates
+  its own, as large as `r_numallocatedlights`) and R_DrawSurface's statics (r_lightptr,
+  r_source, r_stepback...). A block with a build still due counts as used
+  (SW_MT_CacheOverwrite flushes first).
+  - As in play (A B A B, `build/frames_2026-11-01g/`): demo1 48.0 / 48.1 -> **50.6 / 51.0
+    fps**, demo2 42.0 / 42.0 -> **44.1 / 44.1 fps: +5-6 %**; p90 demo1 27.3 -> 24.6 ms, demo2
+    31.8 -> 29.3 ms (the heavy frames gain most). Timedemo speed 51.9 / 44.0. Shots 25/25
+    identical.

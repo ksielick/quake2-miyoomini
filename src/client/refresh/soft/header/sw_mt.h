@@ -64,4 +64,10 @@ void SW_MT_CacheOverwrite(surfcache_t *c);
 /* sw_edge.c: draw one record (the drawing state already set) */
 void SW_MT_Exec(const sw_drawcmd_t *c);
 
+/* surface caches built on both threads: D_CacheSurface hands the build over while recording
+ * (true: it will be built before the records are drawn; false: build it now) */
+qboolean SW_MT_DeferBuild(const drawsurf_t *ds);
+void R_BuildLightMap(drawsurf_t *drawsurf);	/* sw_light.c */
+void R_DrawSurface(drawsurf_t *drawsurf);	/* sw_surf.c */
+
 #endif

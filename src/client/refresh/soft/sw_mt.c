@@ -133,6 +133,14 @@ SW_TLS int sw_mt_replaying;
 
 static sw_drawcmd_t *cmds;
 static int numcmds, maxcmds;
+
+/* surface caches to build before the records are drawn: both threads take them until none
+   are left (a band's spans may use a cache the other thread built) */
+static drawsurf_t *jobs;
+static int numjobs, maxjobs;
+static volatile int job_next;
+extern int r_numallocatedlights;
+static SW_TLS int worker_lights;	/* the size of this thread's own blocklights (the worker) */
 static qboolean recording;
 static int rec_v0, rec_v1;
 static int mtpass = 1;	/* surfcache_t.mtpass of the blocks the current records use */
@@ -192,14 +200,77 @@ replay(int part, void *arg)
 }
 
 static void
+build_caches(int part, void *arg)
+{
+	int i;
+
+	if (part)
+	{
+		/* the worker's own blocklights, as large as the main thread's */
+		if (worker_lights != r_numallocatedlights)
+		{
+			free(blocklights);
+			blocklights = malloc(r_numallocatedlights * sizeof(light_t));
+			worker_lights = blocklights ? r_numallocatedlights : 0;
+			blocklight_max = blocklights ? blocklights + r_numallocatedlights : NULL;
+		}
+		if (!blocklights)
+		{
+			return;	/* (the main thread takes the rest) */
+		}
+	}
+
+	while ((i = __sync_fetch_and_add(&job_next, 1)) < numjobs)
+	{
+		R_BuildLightMap(&jobs[i]);
+		R_DrawSurface(&jobs[i]);
+	}
+}
+
+qboolean
+SW_MT_DeferBuild(const drawsurf_t *ds)
+{
+	if (!recording)
+	{
+		return false;
+	}
+	if (numjobs == maxjobs)
+	{
+		int n = maxjobs ? maxjobs * 2 : 256;
+		drawsurf_t *p = realloc(jobs, n * sizeof(*jobs));
+
+		if (!p)
+		{
+			return false;	/* out of memory: built now */
+		}
+		jobs = p;
+		maxjobs = n;
+	}
+	jobs[numjobs++] = *ds;
+	return true;
+}
+
+static void
 flush(void)
 {
 	replayjob_t j;
 	int slot;
 	float f;
 
+	if (numjobs)
+	{
+		job_next = 0;
+		__sync_synchronize();
+		if (!SW_MT_RunBoth(build_caches, NULL))
+		{
+			build_caches(0, NULL);
+		}
+		numjobs = 0;
+	}
+
 	if (!numcmds)
 	{
+		mtpass++;
 		return;
 	}
 
@@ -290,7 +361,7 @@ SW_MT_CacheUse(surfcache_t *c)
 void
 SW_MT_CacheOverwrite(surfcache_t *c)
 {
-	if (recording && c && c->mtpass == mtpass && numcmds)
+	if (recording && c && c->mtpass == mtpass && (numcmds || numjobs))
 	{
 		flush();
 	}

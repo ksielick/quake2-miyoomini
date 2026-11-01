@@ -22,14 +22,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "header/local.h"
 #include "header/sw_mt.h"
 
-static int		sourcetstep;
-static void		*prowdestbase;
-static unsigned char	*pbasesource;
-static int		r_stepback;
-static int		r_lightwidth;
-static int		r_numvblocks;
-static unsigned char	*r_source, *r_sourcemax;
-static unsigned		*r_lightptr;
+/* (per thread: surface caches are built on both, sw_mt.c) */
+static SW_TLS int		sourcetstep;
+static SW_TLS void		*prowdestbase;
+static SW_TLS unsigned char	*pbasesource;
+static SW_TLS int		r_stepback;
+static SW_TLS int		r_lightwidth;
+static SW_TLS int		r_numvblocks;
+static SW_TLS unsigned char	*r_source, *r_sourcemax;
+static SW_TLS unsigned		*r_lightptr;
 
 void R_BuildLightMap (drawsurf_t *drawsurf);
 
@@ -195,7 +196,7 @@ R_DrawSurfaceBlock8_anymip (int level, int surfrowbytes)
 R_DrawSurface
 ===============
 */
-static void
+void
 R_DrawSurface (drawsurf_t *drawsurf)
 {
 	unsigned char	*basetptr;
@@ -510,6 +511,12 @@ D_CacheSurface (const entity_t *currententity, msurface_t *surface, int miplevel
 	r_drawsurf.surf = surface;
 
 	c_surf++;
+
+	// Miyoo Mini: while D_DrawSurfaces records, built later on both threads (sw_mt.c)
+	if (SW_MT_DeferBuild(&r_drawsurf))
+	{
+		return cache;
+	}
 
 	// calculate the lightings
 	R_BuildLightMap (&r_drawsurf);

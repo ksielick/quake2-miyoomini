@@ -236,7 +236,7 @@ R_LightPoint (const entity_t *currententity, vec3_t p, vec3_t color)
 //===================================================================
 
 
-light_t	*blocklights = NULL, *blocklight_max = NULL;
+SW_TLS light_t	*blocklights = NULL, *blocklight_max = NULL;	// (per thread: sw_mt.c)
 
 /*
 ===============
