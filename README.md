@@ -85,15 +85,18 @@ The mission packs (The Reckoning, Ground Zero) are not supported yet.
 
 ## How fast
 
-Quake II's timedemos at 640x480 with no frame limit, average fps (stock 1200 MHz):
+Quake II's timedemos at 640x480 on the stock 1200 MHz clock, every frame shown as in play,
+average fps:
 
-| Timedemo | Now |
-|---|---|
-| demo1 | 38.8 fps |
-| demo2 | 33.6 fps |
+| Timedemo | Yamagi as it comes (-O2) | Now |
+|---|---|---|
+| demo1 | 38.5 fps | **52.6 fps** |
+| demo2 | 33.5 fps | **47.1 fps** |
 
-So 30 fps holds in these demos, with room to spare. The work towards 60 fps (both CPU cores,
-as in TyrQuake-Miyoo) is planned in [miyoo/NOTES.md](miyoo/NOTES.md), with every result.
++37 % / +41 %, with the picture pixel for pixel the same: the renderer draws on both CPU
+cores (as TyrQuake-Miyoo), and the console's 2D engine turns each 8-bit frame into the
+screen's colours. So 30 fps holds with plenty to spare, and 60 fps is close in lighter
+scenes. More is planned; every step and measurement is in [miyoo/NOTES.md](miyoo/NOTES.md).
 
 ## Credits and license
 
