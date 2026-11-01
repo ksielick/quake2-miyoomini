@@ -668,8 +668,79 @@ void VID_DamageBuffer(int u, int v);
 
 // VID zBuffer damage
 extern qboolean	fastmoving;
-void VID_DamageZBuffer(int u, int v);
-qboolean VID_CheckDamageZBuffer(int u, int v, int ucount, int vcount);
+/* (Miyoo Mini port: VID_DamageZBuffer and VID_CheckDamageZBuffer moved here from sw_main.c
+ * as static inline, unchanged: called for every span while recording, ~4 % of the game
+ * thread in calls.) */
+extern int	vid_zminu, vid_zminv, vid_zmaxu, vid_zmaxv;
+extern SW_TLS int *sw_zdamage;	/* (sw_mt.c) */
+
+/*
+================
+VID_DamageZBuffer
+
+Mark VID Z buffer as damaged and need to be recalculated
+================
+*/
+static inline void
+VID_DamageZBuffer(int u, int v)
+{
+	if (sw_zdamage)
+	{
+		/* (sw_mt.c: models replayed on two threads, each into its own box, merged after) */
+		if (sw_zdamage[0] > u)
+			sw_zdamage[0] = u;
+		if (sw_zdamage[1] < u)
+			sw_zdamage[1] = u;
+		if (sw_zdamage[2] > v)
+			sw_zdamage[2] = v;
+		if (sw_zdamage[3] < v)
+			sw_zdamage[3] = v;
+		return;
+	}
+
+	// update U
+	if (vid_zminu > u)
+	{
+		vid_zminu = u;
+	}
+	if (vid_zmaxu < u)
+	{
+		vid_zmaxu = u;
+	}
+
+	// update V
+	if (vid_zminv > v)
+	{
+		vid_zminv = v;
+	}
+	if (vid_zmaxv < v)
+	{
+		vid_zmaxv = v;
+	}
+}
+
+static inline qboolean
+VID_CheckDamageZBuffer(int u, int v, int ucount, int vcount)
+{
+	if (vid_zminv > (v + vcount) || vid_zmaxv < v)
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+
+	if (vid_zminu > u && vid_zminu > (u + ucount))
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+
+	if (vid_zmaxu < u && vid_zmaxu < (u + ucount))
+	{
+		// can be used previous zbuffer
+		return false;
+	}
+	return true;
+}
 
 /*
 ====================================================================

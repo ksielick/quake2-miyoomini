@@ -48,7 +48,7 @@ pixel_t		*vid_colormap = NULL;
 pixel_t		*vid_alphamap = NULL;
 light_t		vid_lightthreshold = 0;
 static int	vid_minu, vid_minv, vid_maxu, vid_maxv;
-static int	vid_zminu, vid_zminv, vid_zmaxu, vid_zmaxv;
+int	vid_zminu, vid_zminv, vid_zmaxu, vid_zmaxv;	/* (header/local.h: VID_DamageZBuffer) */
 static qboolean IsHighDPIaware = false;
 static qboolean texture_high_color = false;
 
@@ -223,51 +223,6 @@ static void RE_CleanFrame(void);
 static void RE_EndFrame(void);
 static void R_DrawBeam(const entity_t *e);
 
-/*
-================
-VID_DamageZBuffer
-
-Mark VID Z buffer as damaged and need to be recalculated
-================
-*/
-void
-VID_DamageZBuffer(int u, int v)
-{
-	if (sw_zdamage)
-	{
-		/* (sw_mt.c: models replayed on two threads, each into its own box, merged after) */
-		if (sw_zdamage[0] > u)
-			sw_zdamage[0] = u;
-		if (sw_zdamage[1] < u)
-			sw_zdamage[1] = u;
-		if (sw_zdamage[2] > v)
-			sw_zdamage[2] = v;
-		if (sw_zdamage[3] < v)
-			sw_zdamage[3] = v;
-		return;
-	}
-
-	// update U
-	if (vid_zminu > u)
-	{
-		vid_zminu = u;
-	}
-	if (vid_zmaxu < u)
-	{
-		vid_zmaxu = u;
-	}
-
-	// update V
-	if (vid_zminv > v)
-	{
-		vid_zminv = v;
-	}
-	if (vid_zmaxv < v)
-	{
-		vid_zmaxv = v;
-	}
-}
-
 // clean z damage state
 static void
 VID_NoDamageZBuffer(void)
@@ -278,28 +233,6 @@ VID_NoDamageZBuffer(void)
 	vid_zmaxv = 0;
 }
 
-qboolean
-VID_CheckDamageZBuffer(int u, int v, int ucount, int vcount)
-{
-	if (vid_zminv > (v + vcount) || vid_zmaxv < v)
-	{
-		// can be used previous zbuffer
-		return false;
-	}
-
-	if (vid_zminu > u && vid_zminu > (u + ucount))
-	{
-		// can be used previous zbuffer
-		return false;
-	}
-
-	if (vid_zmaxu < u && vid_zmaxu < (u + ucount))
-	{
-		// can be used previous zbuffer
-		return false;
-	}
-	return true;
-}
 
 // Need to recalculate whole z buffer
 static void

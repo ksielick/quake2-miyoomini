@@ -639,7 +639,50 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     +5-6 % / +10 % over mt3.
   - The lesson for the other ports is in miyoo.md: under `-fno-strict-aliasing` keep loop
     state in locals.
-- **Where it stands (2026-11-01 14:05)**: 38.5 / 33.5 fps (-O2) -> **56.5 / 52.2 fps as in
-  play (+47 % / +56 %)**, pixel for pixel the same. The card's main build is
-  `build/miyoo_s3b`. Still to do: TyrQuake's skin addressing in the model spans (pskin +
-  t * skinwidth), PGO (redo the profile), the random system hiccups.
+- **Profile after 3b** (2026-11-01 14:08, demo1 frames 60-609, `build/prof/s3b_demo1.txt`,
+  `miyoo/tools/q2step_prof.sh`):
+  - The main thread took 844 samples (~15.3 ms per frame) and the worker 476 (~8.7 ms).
+  - The world and model drawing is split evenly: about 410 samples each.
+  - The rest, about 430 samples or ~7 ms per frame, runs on the main thread alone while the
+    worker waits:
+    - R_GenerateSpans 58;
+    - RE_RenderFrame 40 (its inlined setup);
+    - R_DrawAliasModel 34;
+    - VID_DamageZBuffer 33;
+    - R_DrawTriangle 26;
+    - R_EmitEdge 18;
+    - the main thread's waits in flush / PolyFlush (libc);
+    - the I8 present's memcpy (12).
+  - All threads together: D_DrawSpansPow2 25.6 %, R_PolysetDrawSpans8_Opaque 16.9 %,
+    D_DrawZSpans 10.4 %, R_DrawSurface 9.1 %.
+  - So the serial part now limits the frame. Overlapping it with the drawing means drawing
+    frame N while N+1 is set up, at the cost of one frame of latency. That is the owner's
+    decision.
+- **3c Grey model light, z damage inline** (2026-11-01 14:15):
+  - With `sw_colorlight 0` (the default) every vertex has three equal light components.
+    Their steps are then equal too, and so are the components along each span, where
+    R_ApplyLight gives `colormap[pix + (light & LIGHTMASK)]`.
+  - R_PolysetDrawSpansTex checks this (equal steps per call, equal values per span) and then
+    runs a loop with one light variable instead of three: fewer registers spilled to the
+    stack. Otherwise it runs the three-component loop as before.
+  - VID_DamageZBuffer and VID_CheckDamageZBuffer moved from sw_main.c into header/local.h as
+    `static inline`, unchanged. They are called for every span while recording. The damage
+    box variables are no longer static.
+  - As in play (A B A B, `build/frames_2026-11-01k/`): demo1 56.4 / 56.5 -> **57.8 / 57.6
+    fps (+2 %)**, demo2 52.6 / 52.5 -> **55.0 / 54.7 fps (+4 %)**. p90 demo2 23.6-24.0 ->
+    22.6-22.7 ms.
+  - Shots 25/25 identical.
+  - The three-component path, with `sw_colorlight 1`, gives the same shots in 3b and 3d,
+    25/25. Those shots differ from `ref`, so coloured light really was drawn.
+- **3d D_DrawSpan two pixels per pass: not taken.**
+  - As in play: demo2 +2 %; demo1 56.8 / 57.5 against 57.8 / 57.5. demo1 is at the 60 fps
+    limit there.
+  - At timedemo speed (A B x3): demo1 66.2-67.3 -> 67.4-67.9 fps, demo2 60.2-60.7 ->
+    60.6-61.1 fps, about +0.7 %.
+  - Too little for the extra code: reverted. gcc's own loop (6 instructions a pixel for a
+    row, 9 diagonal) is close to what unrolling gets on the in-order core.
+- **Where it stands (2026-11-01 14:25)**: 38.5 / 33.5 fps (-O2) -> **57.7 / 54.9 fps as in
+  play (+50 % / +64 %)**; at timedemo speed 67 / 60.5 fps. Pixel for pixel the same. The
+  card's main build is `build/miyoo_s3c`.
+  - Still to do: PGO with a new profile, the random system hiccups.
+  - The owner's decision: drawing a frame late, to overlap the serial ~7 ms.

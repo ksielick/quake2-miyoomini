@@ -90,10 +90,10 @@ average fps:
 
 | Timedemo | Yamagi as it comes (-O2) | Now |
 |---|---|---|
-| demo1 | 38.5 fps | **56.5 fps** |
-| demo2 | 33.5 fps | **52.2 fps** |
+| demo1 | 38.5 fps | **57.7 fps** |
+| demo2 | 33.5 fps | **54.9 fps** |
 
-+47 % / +56 %, with the picture pixel for pixel the same: the renderer draws on both CPU
++50 % / +64 %, with the picture pixel for pixel the same: the renderer draws on both CPU
 cores (as TyrQuake-Miyoo), and the console's 2D engine turns each 8-bit frame into the
 screen's colours. So 30 fps holds with plenty to spare, and 60 fps is close in lighter
 scenes. More is planned; every step and measurement is in [miyoo/NOTES.md](miyoo/NOTES.md).

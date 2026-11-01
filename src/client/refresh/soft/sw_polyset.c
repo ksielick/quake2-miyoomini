@@ -522,6 +522,7 @@ R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage
 	const pixel_t *const alphamap = vid_alphamap;
 	const qboolean	ir = mode == SPANS_OPAQUE &&
 		(r_newrefdef.rdflags & RDF_IRGOGGLES) && (currententity->flags & RF_IR_VISIBLE);
+	const qboolean	grey = lstep0 == lstep1 && lstep0 == lstep2;
 	int	aspancount = d_aspancount, err = errorterm;
 
 	do
@@ -553,7 +554,56 @@ R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage
 			zvalue_t	lzi = pspanpackage->zi;
 			qboolean	zdamaged = false;
 
-			do
+			/* (Miyoo Mini port: grey light, the three components equal at the start and in
+			 * their steps: they stay equal along the span, and R_ApplyLight gives
+			 * colormap[pix + (light & LIGHTMASK)] for every pixel. One light variable instead
+			 * of three: fewer registers spilled. Always the case with sw_colorlight 0.) */
+			if (grey && l0 == l1 && l0 == l2)
+			{
+				do
+				{
+					if ((lzi >> SHIFT16XYZ) >= *lpz)
+					{
+						if (mode == SPANS_OPAQUE)
+						{
+							if (ir)
+								*lpdest = colormap[irtable[*lptex]];
+							else
+								*lpdest = colormap[*lptex + (l0 & LIGHTMASK)];
+						}
+						else
+						{
+							int temp = colormap[*lptex + (l0 & LIGHTMASK)];
+
+							if (mode == SPANS_33)
+								*lpdest = alphamap[temp + *lpdest*256];
+							else
+								*lpdest = alphamap[temp*256 + *lpdest];
+						}
+
+						if (mode != SPANS_33)
+						{
+							*lpz = lzi >> SHIFT16XYZ;
+							zdamaged = true;
+						}
+					}
+					lpdest++;
+					lzi += zistepx;
+					lpz++;
+					l0 += lstep0;
+					lptex += ststepxwhole;
+					lsfrac += sstepxfrac;
+					lptex += lsfrac >> SHIFT16XYZ;
+					lsfrac &= 0xFFFF;
+					ltfrac += tstepxfrac;
+					if (ltfrac & 0x10000)
+					{
+						lptex += skinwidth;
+						ltfrac &= 0xFFFF;
+					}
+				} while (--lcount);
+			}
+			else do
 			{
 				if ((lzi >> SHIFT16XYZ) >= *lpz)
 				{
