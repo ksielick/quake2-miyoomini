@@ -398,6 +398,29 @@ shots against `build/shots/ref` (bit-exact, the owner's rule). Owner's order, 20
    - A resolution option (480x360, 320x240, scaled by MI_GFX): a player's choice.
 5. **To check**: OGG music decoding runs in the game thread (TyrQuake: ~1 ms on a thread);
    first see whether the tracks are on the card.
+6. **Hand-written NEON** (added 2026-11-01 14:30, the owner asked whether we use it).
+   - So far it is only gcc's auto-vectorizer (`-O3 -mfpu=neon-vfpv4`):
+     - D_DrawZSpans' fills (since 3b), R_BuildLightMap, and parts of RE_RenderFrame and
+       R_DrawAliasModel;
+     - stb_image, for loading.
+   - The hottest loops stay scalar: the wall spans, the model spans and the surface cache
+     builder read one texel per pixel from a computed address, then look it up in the
+     colormap. The A7's NEON has no gather.
+   - The candidates, in order:
+     1. **The models' vertex transform and lighting** (R_AliasTransformFinalVerts &
+        co.). Dot products 4 floats at a time. The main thread does this alone, and its
+        serial part is what limits the frame now (R_DrawAliasModel ~4 % of the main thread).
+        The results stay bit-exact with `-ffp-contract=off` and the same order of
+        operations. Look at gcc's code first. Expected 1-2 %.
+     2. **The model spans' depth test** 4 pixels at a time, the texels still fetched one by
+        one for the pixels that pass. More complex, gain unsure.
+     3. Memory copies and clears: libc already does them.
+7. **Draw one frame late** (from the profile after 3b, the owner's decision pending):
+   - The worker draws frame N while the main thread sets up N+1, to overlap the ~7 ms of
+     serial work per frame.
+   - Cost: one frame more input latency (~17 ms).
+   - Work: double-buffered records; the surface cache and the z-damage box, which depend on
+     the frame before.
 
 Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step by step.
 
