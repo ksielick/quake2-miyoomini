@@ -815,3 +815,7 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     rogue/xatrix game.so, Onion integration, a release.
   - Waiting for the owner: drawing a frame late (+1 frame latency); the TyrQuake sound
     fixes (limiter, 16-bit resample step, declicker, ramps; the owner hears no problems).
+- **4:3 weapon position and FOV** (2026-11-03): Yamagi's widescreen defaults (`sw_gunzposition 8`,
+  `r_gunfov 80`) pushed weapon models 8 units forward in view space, causing noticeable perspective
+  distortion (especially on the railgun) on the Miyoo's 4:3 panel. Restored original 1997 id Software
+  behavior via `sw_gunzposition 0` and `r_gunfov -1` in `sw_main.c` (C defaults), `yq2.cfg` and `launch.sh`.

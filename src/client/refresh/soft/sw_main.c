@@ -337,7 +337,7 @@ R_RegisterVariables (void)
 	sw_anisotropic = ri.Cvar_Get("r_anisotropic", "0", CVAR_ARCHIVE);
 	r_retexturing = ri.Cvar_Get("r_retexturing", "1", CVAR_ARCHIVE);
 	r_scale8bittextures = ri.Cvar_Get("r_scale8bittextures", "0", CVAR_ARCHIVE);
-	sw_gunzposition = ri.Cvar_Get("sw_gunzposition", "8", CVAR_ARCHIVE);
+	sw_gunzposition = ri.Cvar_Get("sw_gunzposition", "0", CVAR_ARCHIVE);
 	r_validation = ri.Cvar_Get("r_validation", "0", CVAR_ARCHIVE);
 
 	// On MacOS texture is cleaned up after render and code have to copy a whole
@@ -352,7 +352,7 @@ R_RegisterVariables (void)
 	r_mode = ri.Cvar_Get( "r_mode", "0", CVAR_ARCHIVE );
 
 	r_lefthand = ri.Cvar_Get( "hand", "0", CVAR_USERINFO | CVAR_ARCHIVE );
-	r_gunfov = ri.Cvar_Get( "r_gunfov", "80", CVAR_ARCHIVE );
+	r_gunfov = ri.Cvar_Get( "r_gunfov", "-1", CVAR_ARCHIVE );
 	r_farsee = ri.Cvar_Get("r_farsee", "0", CVAR_LATCH | CVAR_ARCHIVE);
 	r_lightmap = ri.Cvar_Get("r_lightmap", "0", 0);
 	r_colorlight = ri.Cvar_Get("sw_colorlight", "0", CVAR_ARCHIVE);

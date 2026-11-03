@@ -42,6 +42,7 @@ fi
 
 chmod +x ./quake2 2>/dev/null
 # the software renderer at the panel's 640x480; sound at audioserver's 48 kHz
+# sw_gunzposition 0 and r_gunfov -1: original 4:3 weapon position without widescreen offsets
 # (exec: Onion's SIGTERM at power-off reaches the game itself)
 exec ./quake2 +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
-	+set vid_fullscreen 0 +set s_khz 48 "$@" > log.txt 2>&1
+	+set vid_fullscreen 0 +set s_khz 48 +set sw_gunzposition 0 +set r_gunfov -1 "$@" > log.txt 2>&1
