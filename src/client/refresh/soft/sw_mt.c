@@ -292,10 +292,12 @@ flush(void)
 		replay(0, &j);
 		replay(1, &j);
 	}
-	else if (j.ms[0] > 0.05 && j.ms[1] > 0.05)
+	else if (j.ms[0] + j.ms[1] > 0.1)
 	{
 		/* per-row costs of the two parts in this flush: the split that would make them equal */
-		const float cm = (float)(j.ms[0] / f), cw = (float)(j.ms[1] / (1.0f - f));
+		const float ms0 = j.ms[0] > 0.01 ? (float)j.ms[0] : 0.01f;
+		const float ms1 = j.ms[1] > 0.01 ? (float)j.ms[1] : 0.01f;
+		const float cm = ms0 / f, cw = ms1 / (1.0f - f);
 		f = 0.75f * f + 0.25f * (cw / (cm + cw));
 		f = f < 0.1f ? 0.1f : f > 0.9f ? 0.9f : f;
 	}
@@ -379,11 +381,15 @@ typedef struct
 	void (*drawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
 	int blendcolor;
 	int xdenom;
+	short vmin, vmax;
 } sw_tricmd_t;
 
+#define POLY_MAX_ROWS 1024
 static sw_tricmd_t *tris;
 static int numtris, maxtris;
 static qboolean poly_recording;
+static int poly_v0 = POLY_MAX_ROWS, poly_v1 = 0, poly_total_weight = 0;
+static int poly_row_diff[POLY_MAX_ROWS + 1];
 static float poly_split[MAX_SPLIT_SLOTS];
 static int poly_slot, poly_frame = -1;
 extern int r_numallocatedtriangles;
@@ -430,16 +436,10 @@ poly_replay(int part, void *arg)
 		for (i = 0; i < n; i++)
 		{
 			const sw_tricmd_t *t = &l_tris[i];
-			const int v0 = t->v[0].v, v1 = t->v[1].v, v2 = t->v[2].v;
-			int vmin = v0, vmax = v0;
 
 			/* a triangle wholly outside this thread's rows: nothing to set up
 			 * (row vmax itself is never drawn since height = bottom->v - top->v) */
-			if (v1 < vmin) vmin = v1;
-			if (v1 > vmax) vmax = v1;
-			if (v2 < vmin) vmin = v2;
-			if (v2 > vmax) vmax = v2;
-			if (vmax <= band_v0 || vmin >= band_v1)
+			if (t->vmax <= band_v0 || t->vmin >= band_v1)
 			{
 				continue;
 			}
@@ -461,6 +461,9 @@ void
 SW_MT_PolyBegin(void)
 {
 	numtris = 0;
+	poly_v0 = POLY_MAX_ROWS;
+	poly_v1 = 0;
+	poly_total_weight = 0;
 	poly_recording = sw_threads && sw_threads->value;
 }
 
@@ -486,20 +489,46 @@ SW_MT_PolyFlush(void)
 	poly_slot++;
 	f = poly_split[slot] > 0.0f ? poly_split[slot] : 0.5f;
 
-	j.v[0] = r_refdef.vrect.y;
-	j.v[2] = r_refdef.vrect.y + r_refdef.vrect.height;
-	j.v[1] = j.v[0] + (int)((j.v[2] - j.v[0]) * f + 0.5f);
+	if (poly_v0 < poly_v1 && poly_total_weight > 0)
+	{
+		int v, cur_w = 0, acc = 0;
+		const int target = (int)(poly_total_weight * f);
+		int split_v = (poly_v0 + poly_v1) >> 1;
+
+		for (v = poly_v0; v < poly_v1; v++)
+		{
+			cur_w += poly_row_diff[v];
+			poly_row_diff[v] = 0;
+			acc += cur_w;
+			if (acc < target)
+			{
+				split_v = v + 1;
+			}
+		}
+		poly_row_diff[poly_v1] = 0;
+		j.v[0] = poly_v0;
+		j.v[1] = split_v;
+		j.v[2] = poly_v1;
+	}
+	else
+	{
+		j.v[0] = r_refdef.vrect.y;
+		j.v[2] = r_refdef.vrect.y + r_refdef.vrect.height;
+		j.v[1] = j.v[0] + (int)((j.v[2] - j.v[0]) * f + 0.5f);
+	}
 	j.ms[0] = j.ms[1] = 0.0;
 	if (!SW_MT_RunBoth(poly_replay, &j))
 	{
 		poly_replay(0, &j);
 		poly_replay(1, &j);
 	}
-	else if (j.ms[0] > 0.05 && j.ms[1] > 0.05)
+	else if (j.ms[0] + j.ms[1] > 0.1)
 	{
-		const float cm = (float)(j.ms[0] / f), cw = (float)(j.ms[1] / (1.0f - f));
+		const float ms0 = j.ms[0] > 0.01 ? (float)j.ms[0] : 0.01f;
+		const float ms1 = j.ms[1] > 0.01 ? (float)j.ms[1] : 0.01f;
+		const float cm = ms0 / f, cw = ms1 / (1.0f - f);
 		f = 0.75f * f + 0.25f * (cw / (cm + cw));
-		f = f < 0.1f ? 0.1f : f > 0.9f ? 0.9f : f;
+		f = f < 0.25f ? 0.25f : f > 0.75f ? 0.75f : f;
 	}
 	poly_split[slot] = f;
 
@@ -515,6 +544,9 @@ SW_MT_PolyFlush(void)
 	}
 
 	numtris = 0;
+	poly_v0 = POLY_MAX_ROWS;
+	poly_v1 = 0;
+	poly_total_weight = 0;
 	poly_recording = sw_threads && sw_threads->value;
 }
 
@@ -530,6 +562,8 @@ SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t 
 	const finalvert_t *c, int xdenom)
 {
 	sw_tricmd_t *t;
+	int v0, v1, v2, vmin, vmax, cvmin, cvmax;
+	int u0, u1, u2, umin, umax, w;
 
 	if (!poly_recording || sw_mt_replaying)
 	{
@@ -547,6 +581,33 @@ SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t 
 		tris = p;
 		maxtris = n;
 	}
+
+	v0 = a->cv.v; v1 = b->cv.v; v2 = c->cv.v;
+	vmin = v0; vmax = v0;
+	if (v1 < vmin) vmin = v1;
+	if (v1 > vmax) vmax = v1;
+	if (v2 < vmin) vmin = v2;
+	if (v2 > vmax) vmax = v2;
+
+	u0 = a->cv.u; u1 = b->cv.u; u2 = c->cv.u;
+	umin = u0; umax = u0;
+	if (u1 < umin) umin = u1;
+	if (u1 > umax) umax = u1;
+	if (u2 < umin) umin = u2;
+	if (u2 > umax) umax = u2;
+
+	cvmin = vmin < 0 ? 0 : vmin;
+	cvmax = vmax > POLY_MAX_ROWS ? POLY_MAX_ROWS : vmax;
+	if (cvmin < cvmax)
+	{
+		w = (umax - umin) + 16;
+		if (cvmin < poly_v0) poly_v0 = cvmin;
+		if (cvmax > poly_v1) poly_v1 = cvmax;
+		poly_row_diff[cvmin] += w;
+		poly_row_diff[cvmax] -= w;
+		poly_total_weight += w * (cvmax - cvmin);
+	}
+
 	t = &tris[numtris++];
 	t->entity = e;
 	t->v[0] = a->cv;
@@ -556,6 +617,8 @@ SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t 
 	t->drawspans = d_pdrawspans;
 	t->blendcolor = r_aliasblendcolor;
 	t->xdenom = xdenom;
+	t->vmin = (short)vmin;
+	t->vmax = (short)vmax;
 	return true;
 }
 

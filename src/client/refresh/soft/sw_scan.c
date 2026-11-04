@@ -633,6 +633,8 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 	const qboolean l_fastmoving = fastmoving;
 	pixel_t *const l_d_viewbuffer = d_viewbuffer;
 	const int l_vid_buffer_width = vid_buffer_width;
+	const int band_v0 = sw_band_v0;
+	const unsigned band_v_span = (unsigned)(sw_band_v1 - band_v0);
 
 	texture_filtering = (int)sw_texture_filtering->value;
 	sdivzpow2stepu = l_d_sdivzstepu * spanstep_value;
@@ -641,7 +643,7 @@ D_DrawSpansPow2 (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zist
 
 	do
 	{
-		if (SW_SPAN_OUTSIDE_BAND(pspan))
+		if ((unsigned)(pspan->v - band_v0) >= band_v_span)
 		{
 			continue;	/* (sw_mt.c: the other thread's rows) */
 		}
@@ -785,6 +787,11 @@ D_DrawZSpans (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv
 	// we count on FP exceptions being turned off to avoid range problems
 	izistep = (int)(d_zistepu * 0x8000 * (float)SHIFT16XYZ_MULT);
 	safe_step = D_DrawZSpanGetStepValue(izistep);
+	const int mt_replaying = sw_mt_replaying;
+	const int band_v0 = sw_band_v0;
+	const unsigned band_v_span = (unsigned)(sw_band_v1 - band_v0);
+	zvalue_t *const l_d_pzbuffer = d_pzbuffer;
+	const int l_vid_buffer_width = vid_buffer_width;
 
 	do
 	{
@@ -794,10 +801,10 @@ D_DrawZSpans (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv
 		float		zi;
 		float		du, dv;
 
-		if (sw_mt_replaying)
+		if (mt_replaying)
 		{
 			/* sw_mt.c: the band, and the z-damage check made while recording */
-			if (SW_SPAN_OUTSIDE_BAND(pspan) || !pspan->zwrite)
+			if ((unsigned)(pspan->v - band_v0) >= band_v_span || !pspan->zwrite)
 			{
 				continue;
 			}
@@ -814,7 +821,7 @@ D_DrawZSpans (espan_t *pspan, float d_ziorigin, float d_zistepu, float d_zistepv
 			VID_DamageZBuffer(pspan->u + pspan->count, pspan->v);
 		}
 
-		pdest = d_pzbuffer + (vid_buffer_width * pspan->v) + pspan->u;
+		pdest = l_d_pzbuffer + (l_vid_buffer_width * pspan->v) + pspan->u;
 
 		count = pspan->count;
 

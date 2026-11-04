@@ -531,7 +531,10 @@ R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage
 	const qboolean	ir = mode == SPANS_OPAQUE &&
 		(r_newrefdef.rdflags & RDF_IRGOGGLES) && (currententity->flags & RF_IR_VISIBLE);
 	const qboolean	grey = lstep0 == lstep1 && lstep0 == lstep2;
+	const int	band_v0 = sw_band_v0;
+	const unsigned	band_v_span = (unsigned)(sw_band_v1 - band_v0);
 	int	aspancount = d_aspancount, err = errorterm;
+	int	zminu = INT_MAX, zmaxu = INT_MIN, zminv = INT_MAX, zmaxv = INT_MIN;
 
 	do
 	{
@@ -548,7 +551,7 @@ R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage
 			err -= errdown;
 		}
 
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
+		if (lcount > 0 && (unsigned)(pspanpackage->v - band_v0) < band_v_span)	/* (sw_mt.c) */
 		{
 			const int	pos_shift = (pspanpackage->v * width) + pspanpackage->u;
 			pixel_t		*lpdest = viewbuffer + pos_shift;
@@ -658,17 +661,27 @@ R_PolysetDrawSpansTex(const entity_t *currententity, spanpackage_t *pspanpackage
 
 			if (zdamaged)
 			{
-				// damaged only current line
-				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
-				VID_DamageZBuffer(
-					pspanpackage->u + aspancount - pspanpackage->count,
-					pspanpackage->v);
+				const int u0 = pspanpackage->u;
+				const int u1 = u0 + aspancount - pspanpackage->count;
+				const int v = pspanpackage->v;
+
+				if (u0 < zminu) zminu = u0;
+				if (u1 < zminu) zminu = u1;
+				if (u0 > zmaxu) zmaxu = u0;
+				if (u1 > zmaxu) zmaxu = u1;
+				if (v < zminv) zminv = v;
+				if (v > zmaxv) zmaxv = v;
 			}
 		}
 
 		pspanpackage++;
 	} while (pspanpackage->count != INT_MIN);
 
+	if (zminu <= zmaxu)
+	{
+		VID_DamageZBuffer(zminu, zminv);
+		VID_DamageZBuffer(zmaxu, zmaxv);
+	}
 	d_aspancount = aspancount;
 	errorterm = err;
 }
@@ -683,7 +696,10 @@ R_PolysetDrawSpansConst(spanpackage_t *pspanpackage, const int mode)
 	zvalue_t *const	zbuffer = d_pzbuffer;
 	const pixel_t *const alphamap = vid_alphamap;
 	const int	blendcolor = r_aliasblendcolor;
+	const int	band_v0 = sw_band_v0;
+	const unsigned	band_v_span = (unsigned)(sw_band_v1 - band_v0);
 	int	aspancount = d_aspancount, err = errorterm;
+	int	zminu = INT_MAX, zmaxu = INT_MIN, zminv = INT_MAX, zmaxv = INT_MIN;
 
 	do
 	{
@@ -700,7 +716,7 @@ R_PolysetDrawSpansConst(spanpackage_t *pspanpackage, const int mode)
 			err -= errdown;
 		}
 
-		if (lcount > 0 && !SW_SPAN_OUTSIDE_BAND(pspanpackage))	/* (sw_mt.c) */
+		if (lcount > 0 && (unsigned)(pspanpackage->v - band_v0) < band_v_span)	/* (sw_mt.c) */
 		{
 			const int	pos_shift = (pspanpackage->v * width) + pspanpackage->u;
 			pixel_t		*lpdest = viewbuffer + pos_shift;
@@ -729,17 +745,27 @@ R_PolysetDrawSpansConst(spanpackage_t *pspanpackage, const int mode)
 
 			if (zdamaged)
 			{
-				// damaged only current line
-				VID_DamageZBuffer(pspanpackage->u, pspanpackage->v);
-				VID_DamageZBuffer(
-					pspanpackage->u + aspancount - pspanpackage->count,
-					pspanpackage->v);
+				const int u0 = pspanpackage->u;
+				const int u1 = u0 + aspancount - pspanpackage->count;
+				const int v = pspanpackage->v;
+
+				if (u0 < zminu) zminu = u0;
+				if (u1 < zminu) zminu = u1;
+				if (u0 > zmaxu) zmaxu = u0;
+				if (u1 > zmaxu) zmaxu = u1;
+				if (v < zminv) zminv = v;
+				if (v > zmaxv) zmaxv = v;
 			}
 		}
 
 		pspanpackage++;
 	} while (pspanpackage->count != INT_MIN);
 
+	if (zminu <= zmaxu)
+	{
+		VID_DamageZBuffer(zminu, zminv);
+		VID_DamageZBuffer(zmaxu, zmaxv);
+	}
 	d_aspancount = aspancount;
 	errorterm = err;
 }
