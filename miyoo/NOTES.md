@@ -874,3 +874,9 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
 
   - At **1600 MHz** (+33 % CPU clock), raw rendering speed scales by **+21.3 % in `demo1` (`76.1 -> 92.3 fps`)** and **+21.5 % in `demo2` (`69.3 -> 84.2 fps`)**.
   - In-play (`VSYNC=1`), **both `demo1` (`60.0 fps`) and `demo2` (`59.7 fps`) saturate the hardware 59.67 Hz panel refresh rate**, with mean frame time locked at `16.8 ms` (`p50 = 16.7 ms`), `demo2` `p99` down to **`21.6–22.4 ms`**, and the longest frame in all of `demo2` at **`29.8–30.3 ms`** (every single frame under 2 panel refreshes).
+- **6d. Fix in-game framerate clamp when `vid_maxfps > 100` (`src/common/frame.c`)** (2026-11-04):
+  - **Issue**: In the video options menu, selecting "unlimited" max FPS (`vid_maxfps 300`) while `cl_showfps 1` resulted in the in-game counter capping around ~71 fps (instead of 85–95 fps).
+  - **Root Cause**: In `Qcommon_Frame` (`src/common/frame.c`), the `#ifdef MIYOO_MINI` block only handled `vid_maxfps <= 100` (panel refresh pacing). When `vid_maxfps > 100`, execution fell through to Yamagi's upstream `if (R_IsVSyncActive())` block. Because `r_vsync` was active (1) by default in config, `rfps = refreshrate * 1.2f = 59.67 * 1.2 = 71.6 fps`, clamping frame times to ~71.6 fps.
+  - **Fix**: Wrapped the entire upstream `if (R_IsVSyncActive()) ... else ...` block in `#else` and handled `vid_maxfps > 100` directly under `#ifdef MIYOO_MINI` (`rfps = vid_maxfps->value`), so on Miyoo, setting unlimited FPS bypasses the software vsync clamp as intended.
+  - **Build & Deploy**: Recompiled `build/miyoo_pgo` and deployed to `/mnt/SDCARD/Roms/PORTS/Games/Quake2/`.
+

@@ -580,7 +580,11 @@ Qcommon_Frame(int usec)
 		pfps = (cl_maxfps->value < refreshrate - 2) ? cl_maxfps->value : rfps;
 	}
 	else
-#endif
+	{
+		rfps = vid_maxfps->value;
+		pfps = (cl_maxfps->value > rfps) ? rfps : cl_maxfps->value;
+	}
+#else
 	if (R_IsVSyncActive())
 	{
 		float refreshrate = GLimp_GetRefreshRate();
@@ -615,6 +619,7 @@ Qcommon_Frame(int usec)
 		// we can't have more packet frames than render frames, so limit pfps to rfps
 		pfps = (cl_maxfps->value > rfps) ? rfps : cl_maxfps->value;
 	}
+#endif
 
 	// cl_maxfps <= 0 means: automatically choose a packet framerate that should work
 	// well with the render framerate, which is the case if rfps is a multiple of pfps

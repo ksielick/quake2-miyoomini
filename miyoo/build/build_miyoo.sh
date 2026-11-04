@@ -71,7 +71,7 @@ $(find src/game -name '*.c' | sort | tr '\n' ' ') miyoo/build/glibc_compat.c"
 OPT=${OPT:--O2}
 case "$PGO" in
 gen) PGOF="-fprofile-generate=/tmp/pgo -fprofile-update=atomic" ;;
-use) PGOF="-fprofile-use -fprofile-correction -Wno-missing-profile" ;;
+use) PGOF="-fprofile-use -fprofile-correction -Wno-missing-profile -Wno-coverage-mismatch" ;;
 "") PGOF="" ;;
 *) echo "PGO=gen or PGO=use" >&2; exit 1 ;;
 esac
