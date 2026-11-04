@@ -1,7 +1,7 @@
 # Quake II for the Miyoo Mini Plus
 
 Quake II on the **Miyoo Mini Plus** with [OnionOS](https://github.com/OnionUI/Onion), at the
-screen's full **640x480**, on the console's stock clock: **no overclocking**. It is
+screen's full **640x480**, tuned for smooth 60 fps gameplay. It is
 [Yamagi Quake II](https://github.com/yquake2/yquake2) with its software renderer, made to run
 straight on the console (no RetroArch), and started from Onion's **Ports** list.
 
@@ -9,8 +9,8 @@ straight on the console (no RetroArch), and started from Onion's **Ports** list.
 [Port Manager](https://github.com/ksielick/portmanager-miyoo). Speed work is going on (see
 below).
 
-- **640x480 at a steady 30 fps** by default: every frame stays on the screen for exactly two
-  of the panel's refreshes, so movement is even. 60 fps and "unlimited" are in the video menu.
+- **640x480 locked at 60 fps**: plays at the hardware panel's refresh rate (59.67 Hz) with
+  even frame pacing. 30 fps and "unlimited" (100+ fps) are in the video menu.
 - **Made for the buttons.** The same layout as [TyrQuake-Miyoo](https://github.com/ksielick/tyrquake-miyoo),
   with a light auto aim, since there's no mouse or stick to aim with.
 - **The picture stays as Quake II drew it.** Every speed-up is checked pixel for pixel.
@@ -90,18 +90,14 @@ The mission packs (The Reckoning, Ground Zero) are not supported yet.
 
 ## How fast
 
-Quake II's timedemos at 640x480 on the stock 1200 MHz clock, every frame shown as in play,
-average fps:
+Quake II's timedemos at 640x480, raw rendering speed vs locked in-play frame rate (VSYNC=1, 59.67 Hz hardware ceiling):
 
-| Timedemo | Yamagi as it comes (-O2) | Now |
-|---|---|---|
-| demo1 | 38.5 fps | **57.7 fps** |
-| demo2 | 33.5 fps | **54.9 fps** |
+| Timedemo | Yamagi baseline (-O2) | 1200 MHz stock (play / raw) | 1600 MHz OC (play / raw) |
+|---|---|---|---|
+| demo1 | 38.5 fps | 59.4 fps / 76.1 fps | **60.0 fps** / **92.3 fps** |
+| demo2 | 33.5 fps | 58.5 fps / 69.3 fps | **59.7 fps** / **84.2 fps** |
 
-+50 % / +64 %, with the picture pixel for pixel the same: the renderer draws on both CPU
-cores (as TyrQuake-Miyoo), and the console's 2D engine turns each 8-bit frame into the
-screen's colours. So 30 fps holds with plenty to spare, and 60 fps is close in lighter
-scenes. More is planned; every step and measurement is in [miyoo/NOTES.md](miyoo/NOTES.md).
+Over **+140 % to +150 % raw speedup**, with the picture pixel for pixel the same (25/25 screenshots identical): the renderer balances drawing across both CPU cores (`sw_mt.c`), caches TLS and span bounds in registers, uses Profile-Guided Optimisation (PGO) + LTO, and the console's 2D engine (MI_GFX) turns each 8-bit frame into the screen's colours. In real gameplay uncapped framerates exceed **100+ fps**, leaving plenty of headroom to hold 60 fps with zero drops. Every step and measurement is documented in [miyoo/NOTES.md](miyoo/NOTES.md).
 
 ## Credits and license
 
