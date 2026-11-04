@@ -30,12 +30,13 @@ cd "$GAME" || exit 1
 export HOME=/tmp/q2bench_home MIYOO_VSYNC=${VSYNC:-0}
 
 { echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; } 2>/dev/null
+[ -n "$MHZ" ] && /mnt/SDCARD/.tmp_update/bin/cpuclock "$MHZ" >/dev/null 2>&1
 CPU1=/sys/devices/system/cpu/cpu1/online
 [ -f "$CPU1" ] && [ "$(cat "$CPU1" 2>/dev/null)" = 0 ] && { echo 1 > "$CPU1"; } 2>/dev/null
 
 {
 	echo "# $(date '+%Y-%m-%d %H:%M:%S') up $(cut -d' ' -f1 /proc/uptime) s," \
-		"$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq) kHz," \
+		"$(/mnt/SDCARD/.tmp_update/bin/cpuclock 2>/dev/null || cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq) MHz," \
 		"$(cat /sys/devices/system/cpu/cpufreq/temp_out 2>/dev/null)," \
 		"battery $(/customer/app/axp_test 2>/dev/null)${EXTRA:+, $EXTRA}${SHOTS:+, shots every $SHOTS (not a timing)}"
 } > "$OUT"

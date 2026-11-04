@@ -862,6 +862,15 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
     - Cached `sw_band_v0` and `sw_band_v1 - sw_band_v0` in local registers before the span loops in `R_PolysetDrawSpansTex`, `R_PolysetDrawSpansConst`, `D_DrawSpansPow2` and `D_DrawZSpans`, and accumulated `zminu, zmaxu, zminv, zmaxv` in local registers across `R_PolysetDrawSpansTex` / `R_PolysetDrawSpansConst` so `VID_DamageZBuffer` (`sw_zdamage`) is written once per call instead of twice per scanline.
   - **Results (refreshed PGO profile, 25/25 screenshots pixel-identical)**:
     - In `demo2` profile (`build/prof/argon_poly_demo2.txt`), `SW_MT_RunBoth` wait samples in `[libc-2.28.so]` dropped by **43 %** (`56 -> 32` samples) and `poly_replay` split **15 vs 15 samples** across both threads.
-    - Raw `demo2` speed (`VSYNC=0`) rose from `67.5 fps` to **`68.3 / 67.8 fps` (68.1 fps, +16.0 % over `s3c`)** (`demo1`: `73.9 / 74.0 fps`).
-    - In-play `demo2` (`VSYNC=1`) `p90` improved from `20.3 / 20.1 ms` to **`20.0 / 19.7 ms`**, `p99` from `28.5 / 27.9 ms` to **`26.4 / 26.1 ms` (-2.0 ms)**, and `max` to **`33.5 ms`**.
+    - Raw `demo2` speed (`VSYNC=0`) rose from `67.5 fps` to **`68.3 / 67.8 fps` (68.1 fps, +16.0 % over `s3c`)** (`demo1`: `73.9 / 74.0 fps`), and on the cleaned card (`q2step_oc.sh`, 1200 MHz) reached **`76.2 / 75.9 fps` (76.1 fps)** in `demo1` and **`69.0 / 69.5 fps` (69.3 fps)** in `demo2`, with in-play (`VSYNC=1`) at **`59.2 / 59.6 fps`** (`demo1`) and **`58.4 / 58.5 fps`** (`demo2`, `p99 = 26.2 / 25.2 ms`).
     - Deployed to the SD card (`/mnt/SDCARD/Roms/PORTS/Games/Quake2/`).
+- **6c. 1600 MHz overclock benchmark (`cpuclock 1600`, `miyoo/tools/q2step_oc.sh`, `build/frames_argon_oc/`)** (2026-11-04):
+  - Measured 2 alternated rounds (`1200 MHz` vs `1600 MHz`) on the deployed `Argon` PGO build (`VSYNC=1, +set vid_maxfps 60` as in play, and `VSYNC=0` raw timedemo speed; temperature 61–66 °C and battery rail 3547–3554 mV identical between 1200 and 1600 MHz):
+
+    | Clock | `demo1` play (`VSYNC=1`) | `demo2` play (`VSYNC=1`) | `demo1` p50 / p90 / p99 / max ms (`>50`) | `demo2` p50 / p90 / p99 / max ms (`>50`) | `demo1` raw (`VSYNC=0`) | `demo2` raw (`VSYNC=0`) |
+    |---|---|---|---|---|---|---|
+    | **1200 MHz** | 59.2 / 59.6 (**59.4 fps**) | 58.4 / 58.5 (**58.5 fps**) | 16.7 / 18.7 / 24.0 / 52.2–63.4 (1) | 16.7 / 19.7 / 25.7 / 32.6–42.7 (0) | 76.2 / 75.9 (**76.1 fps**) | 69.0 / 69.5 (**69.3 fps**) |
+    | **1600 MHz** | **59.9 / 60.0 (60.0 fps)** | **59.6 / 59.7 (59.7 fps)** | **16.7 / 18.1 / 24.3 / 45.0 (0)** *(r2)* | **16.7 / 18.4 / 22.0 / 30.1 (0)** | **91.9 / 92.6 (92.3 fps)** | **84.0 / 84.3 (84.2 fps)** |
+
+  - At **1600 MHz** (+33 % CPU clock), raw rendering speed scales by **+21.3 % in `demo1` (`76.1 -> 92.3 fps`)** and **+21.5 % in `demo2` (`69.3 -> 84.2 fps`)**.
+  - In-play (`VSYNC=1`), **both `demo1` (`60.0 fps`) and `demo2` (`59.7 fps`) saturate the hardware 59.67 Hz panel refresh rate**, with mean frame time locked at `16.8 ms` (`p50 = 16.7 ms`), `demo2` `p99` down to **`21.6–22.4 ms`**, and the longest frame in all of `demo2` at **`29.8–30.3 ms`** (every single frame under 2 panel refreshes).
