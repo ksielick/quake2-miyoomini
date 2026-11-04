@@ -1,0 +1,16 @@
+#!/bin/sh
+# Quake II: Ground Zero (Rogue Mission Pack 2) for the Miyoo Mini Plus (OnionOS)
+# https://github.com/ksielick/quake2-miyoomini (branch Argon)
+GameName="Quake II - Ground Zero"
+GameDir="Quake2"
+GameExecutable="launch.sh"
+# the program itself: the shortcut always shows; launch.sh tells if Quake II's data is missing
+GameDataFile="quake2"
+
+KillAudioserver=0
+PerformanceMode=1
+
+Arguments="+set game rogue"
+
+cd "/mnt/SDCARD/Roms/PORTS/Games/$GameDir"
+/mnt/SDCARD/Emu/PORTS/launch_standalone.sh "$GameName" "$GameDir" "$GameExecutable" "$Arguments" "$GameDataFile" "$KillAudioserver" "$PerformanceMode"

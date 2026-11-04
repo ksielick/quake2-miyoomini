@@ -1,6 +1,7 @@
 /build*/
 /debug/
 /release/
+/dist/
 *.mk
 *.user
 *.d

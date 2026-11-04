@@ -11,6 +11,8 @@ below).
 
 - **640x480 locked at 60 fps**: plays at the hardware panel's refresh rate (59.67 Hz) with
   even frame pacing. 30 fps and "unlimited" (100+ fps) are in the video menu.
+- **Includes Mission Packs**: includes *The Reckoning* (Xatrix) and *Ground Zero* (Rogue) with
+  dedicated shortcuts, box art icons, and auto-aim.
 - **Made for the buttons.** The same layout as [TyrQuake-Miyoo](https://github.com/ksielick/tyrquake-miyoo),
   with a light auto aim, since there's no mouse or stick to aim with.
 - **The picture stays as Quake II drew it.** Every speed-up is checked pixel for pixel.
@@ -67,26 +69,19 @@ mouse and keyboard settings) are hidden.
 (within about 20°) and in sight, your shot goes up or down to it. It never turns you left or
 right, it is off in deathmatch, and it never aims at other players.
 
-## Installing (by hand, until the release)
+## Install
 
-You need OnionOS with its **Ports** list (Apps → Package Manager → Verified → Ports
-Collection) and your own Quake II data, which isn't included: `pak0.pak`, `pak1.pak` and
-`pak2.pak` from the full game's `baseq2` folder (GOG, Steam or the CD), or the demo's
-`pak0.pak`.
-
-1. Put the port's files in `Roms/PORTS/Games/Quake2/` on the SD card (`quake2`,
-   `ref_soft.so`, `launch.sh`, `baseq2/game.so`, `baseq2/yq2.cfg`) and the shortcut
-   `Quake II.port` in `Roms/PORTS/Shortcuts/FPS/`.
-2. Copy your `pak` files into `Roms/PORTS/Games/Quake2/baseq2/`. Upper or lower case doesn't
-   matter.
-3. Play: *Games → Ports → FPS → Quake II*. If it doesn't show, refresh the list from its menu.
-
-Music (optional): copy the GOG version's `music` folder (`Track02.ogg` ...) next to `baseq2`,
-or into `baseq2/music/`. It is decoded on the second CPU core, so it costs the game no speed.
+1. Unpack the release zip (`dist/Quake2-Miyoo-v1.0.0.zip`) to the root of your SD card (`/mnt/SDCARD/`).
+2. Copy your `pak` files (from GOG or Steam):
+   - **Base Quake II**: copy `pak0.pak` (and `pak1.pak`, `pak2.pak`) into `Roms/PORTS/Games/Quake2/baseq2/`.
+   - **The Reckoning (Xatrix)**: copy `pak0.pak` into `Roms/PORTS/Games/Quake2/xatrix/`.
+   - **Ground Zero (Rogue)**: copy `pak0.pak` into `Roms/PORTS/Games/Quake2/rogue/`.
+   (Upper or lower case doesn't matter; the launcher automatically normalizes names).
+3. Music (optional): copy the GOG version's `music` folder (`Track02.ogg` ...) next to `baseq2`,
+   or into `baseq2/music/`. It is decoded on the second CPU core, so it costs the game no speed.
+4. Play: *Games → Ports → FPS → Quake II* (or *The Reckoning* / *Ground Zero*). If it doesn't show, refresh the list from its menu.
 
 Savegames and settings are kept in `Roms/PORTS/Games/Quake2/.yq2/`.
-
-The mission packs (The Reckoning, Ground Zero) are not supported yet.
 
 ## How fast
 

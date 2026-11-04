@@ -19,11 +19,28 @@ lower_names () {
 	done
 }
 [ -d baseq2 ] && lower_names baseq2
+[ -d xatrix ] && lower_names xatrix
+[ -d rogue ] && lower_names rogue
 
 if [ ! -f baseq2/pak0.pak ]; then
 	printf 'Quake II data missing: put baseq2/pak0.pak\n(and pak1.pak, pak2.pak) in\nRoms/PORTS/Games/Quake2/' > /tmp/MissingPortFile.tmp
 	exit 1
 fi
+
+case "$*" in
+	*xatrix*)
+		if [ ! -f xatrix/pak0.pak ]; then
+			printf 'The Reckoning data missing:\nput pak0.pak in\nRoms/PORTS/Games/Quake2/xatrix/' > /tmp/MissingPortFile.tmp
+			exit 1
+		fi
+		;;
+	*rogue*)
+		if [ ! -f rogue/pak0.pak ]; then
+			printf 'Ground Zero data missing:\nput pak0.pak in\nRoms/PORTS/Games/Quake2/rogue/' > /tmp/MissingPortFile.tmp
+			exit 1
+		fi
+		;;
+esac
 
 # settings and saves go to $HOME/.yq2: Onion's HOME (/home/root) doesn't exist on its
 # read-only root, so they are kept here, in the game's folder on the card

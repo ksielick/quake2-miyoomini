@@ -66,6 +66,8 @@ src/client/refresh/files/pvs.c src/common/shared/shared.c src/common/md4.c src/b
 miyoo/build/glibc_compat.c"
 GAME="src/common/shared/flash.c src/common/shared/rand.c src/common/shared/shared.c
 $(find src/game -name '*.c' | sort | tr '\n' ' ') miyoo/build/glibc_compat.c"
+XATRIX="$(find src/xatrix -name '*.c' 2>/dev/null | sort | tr '\n' ' ') miyoo/build/glibc_compat.c"
+ROGUE="$(find src/rogue -name '*.c' 2>/dev/null | sort | tr '\n' ' ') miyoo/build/glibc_compat.c"
 
 # --- flags (the Makefile's, for ARMv7 hard-float; -fsigned-char: the code is tested on x86)
 OPT=${OPT:--O2}
@@ -87,7 +89,7 @@ CFLAGS="$OPT $PGOF -Wall -fomit-frame-pointer -fno-strict-aliasing -fwrapv -fvis
 -DYQ2OSTYPE=\\\"Linux\\\" -DYQ2ARCH=\\\"arm\\\" -DNOUNCRYPT -DMIYOO_MINI
 -include miyoo/build/glibc_compat.h -I$OUT/include"
 
-mkdir -p "$OUT/obj" "$OUT/baseq2"
+mkdir -p "$OUT/obj" "$OUT/baseq2" "$OUT/xatrix" "$OUT/rogue"
 # Yamagi includes <SDL2/SDL.h>: the headers as include/SDL2/
 [ -f "$OUT/include/SDL2/SDL.h" ] || { mkdir -p "$OUT/include/SDL2"; cp "$SDL2_INC"/*.h "$OUT/include/SDL2/"; }
 echo $CFLAGS > "$OUT/cflags.new"
@@ -114,6 +116,8 @@ compile() {
 compile client "" $CLIENT
 compile ref_soft "-fPIC${LTOF:+ $LTOF}" $REFSOFT	# (no trailing blank, see above)
 compile game "-fPIC" $GAME
+[ -d "src/xatrix" ] && compile xatrix "-fPIC -Isrc/xatrix" $XATRIX
+[ -d "src/rogue" ] && compile rogue "-fPIC -Isrc/rogue" $ROGUE
 
 CPUF="-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
 LIBS="-Wl,--wrap=stat -lm -Wl,--no-as-needed -l:libdl.so.2 -l:libpthread.so.0 -l:librt.so.1"
@@ -127,9 +131,22 @@ echo "  LD ref_soft.so"
 echo "  LD baseq2/game.so"
 "$CC" -shared -static-libgcc $PGOF -o "$OUT/baseq2/game.so" "$OUT"/obj/game/*.o -Wl,--wrap=stat -lm
 
+if [ -d "src/xatrix" ]; then
+	echo "  LD xatrix/game.so"
+	"$CC" -shared -static-libgcc $PGOF -o "$OUT/xatrix/game.so" "$OUT"/obj/xatrix/*.o -Wl,--wrap=stat -lm
+fi
+
+if [ -d "src/rogue" ]; then
+	echo "  LD rogue/game.so"
+	"$CC" -shared -static-libgcc $PGOF -o "$OUT/rogue/game.so" "$OUT"/obj/rogue/*.o -Wl,--wrap=stat -lm
+fi
+
 # the Miyoo has glibc 2.28: no symbol may need a newer version
 bad=0
-for b in quake2 ref_soft.so baseq2/game.so; do
+TARGETS="quake2 ref_soft.so baseq2/game.so"
+[ -d "src/xatrix" ] && TARGETS="$TARGETS xatrix/game.so"
+[ -d "src/rogue" ] && TARGETS="$TARGETS rogue/game.so"
+for b in $TARGETS; do
 	cp "$OUT/$b" "$OUT/$b.unstripped"	# (for addr2line on crash addresses)
 	"$TC/arm-none-linux-gnueabihf-strip" "$OUT/$b"
 	NEW=$("$TC/arm-none-linux-gnueabihf-objdump" -T "$OUT/$b" | grep -o 'GLIBC_2\.[0-9]*' | sort -u -t. -k2,2n |
@@ -143,7 +160,10 @@ done
 # the modules' symbols outside glibc must come from the executable (the device's dynamic linker
 # would stop at the first missing one: "symbol lookup error")
 "$TC/arm-none-linux-gnueabihf-objdump" -T "$OUT/quake2" | awk '$2 != "*UND*" && $4 != "*UND*" {print $NF}' | sort -u > "$OUT/exports.txt"
-for b in ref_soft.so baseq2/game.so; do
+MODULES="ref_soft.so baseq2/game.so"
+[ -d "src/xatrix" ] && MODULES="$MODULES xatrix/game.so"
+[ -d "src/rogue" ] && MODULES="$MODULES rogue/game.so"
+for b in $MODULES; do
 	MISSING=$("$TC/arm-none-linux-gnueabihf-objdump" -T "$OUT/$b" | awk '/\*UND\*/ && !/GLIBC/ && $NF != "" {print $NF}' |
 		grep -v '^_\(_gmon_start__\|ITM_\|_cxa_finalize\)' | sort -u | comm -23 - "$OUT/exports.txt")
 	if [ -n "$MISSING" ]; then

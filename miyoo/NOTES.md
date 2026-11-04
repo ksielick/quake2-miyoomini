@@ -879,4 +879,11 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - **Root Cause**: In `Qcommon_Frame` (`src/common/frame.c`), the `#ifdef MIYOO_MINI` block only handled `vid_maxfps <= 100` (panel refresh pacing). When `vid_maxfps > 100`, execution fell through to Yamagi's upstream `if (R_IsVSyncActive())` block. Because `r_vsync` was active (1) by default in config, `rfps = refreshrate * 1.2f = 59.67 * 1.2 = 71.6 fps`, clamping frame times to ~71.6 fps.
   - **Fix**: Wrapped the entire upstream `if (R_IsVSyncActive()) ... else ...` block in `#else` and handled `vid_maxfps > 100` directly under `#ifdef MIYOO_MINI` (`rfps = vid_maxfps->value`), so on Miyoo, setting unlimited FPS bypasses the software vsync clamp as intended.
   - **Build & Deploy**: Recompiled `build/miyoo_pgo` and deployed to `/mnt/SDCARD/Roms/PORTS/Games/Quake2/`.
+- **7. Official Mission Packs (*The Reckoning* / `xatrix`, *Ground Zero* / `rogue`), shortcut icons & release package** (2026-11-05):
+  - **Mission packs compilation**: Integrated sources into `src/xatrix` and `src/rogue`, updated `miyoo/build/build_miyoo.sh` to compile `xatrix/game.so` (582 KB) and `rogue/game.so` (689 KB) linked against `glibc_compat.c` with zero unresolved symbols.
+  - **Nintendo D-pad controls & auto-aim**: Added `autoaim` (light vertical auto aim) and `aimfix 1` defaults into both `src/xatrix/` and `src/rogue/`, ensuring weapons in all expansion packs aim smoothly on handheld controls without analogue sticks.
+  - **Port shortcuts & icons**: Added dedicated `.port` shortcuts (`Quake II - The Reckoning.port`, `Quake II - Ground Zero.port`) in `Roms/PORTS/Shortcuts/FPS/` and created high-quality 250x360 cover art icons for all three titles in `Roms/PORTS/Imgs/` and next to each shortcut.
+  - **Launcher enhancements**: Extended `launch.sh` with automatic directory lower-casing and missing `.pak` file error reporting for each expansion pack.
+  - **Standalone release packaging**: Created `miyoo/tools/package_release.sh` producing clean `dist/Quake2-Miyoo-v1.0.0.zip` (1.9 MB) and debug symbols `dist/Quake2-Symbols-v1.0.0.zip` (1.3 MB) ready for 100 % stock OnionOS.
+
 
