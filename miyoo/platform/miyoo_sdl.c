@@ -592,6 +592,11 @@ int Miyoo_SetIndexedFrame(const uint8_t *idx, const uint32_t *pal, int w, int h)
 	return 1;
 }
 
+uint8_t *Miyoo_GetIndexedBuffers(int w, int h)
+{
+	return MiyooFb_GetI8Buffers(w, h);
+}
+
 void SDL_RenderPresent(SDL_Renderer *renderer)
 {
 	MiyooProf_Frame();

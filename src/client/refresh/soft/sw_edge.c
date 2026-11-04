@@ -60,8 +60,6 @@ float	scale_for_mip;
 static void R_GenerateSpans (void);
 static void R_GenerateSpansBackward (void);
 
-static void R_TrailingEdge (surf_t *surf, edge_t *edge);
-
 /*
 ===============================================================================
 
@@ -208,20 +206,20 @@ R_StepActiveU (edge_t *pedge)
 	}
 }
 
-static void
-R_InsertSpan (surf_t *surf, shift20_t iu)
+static inline __attribute__((always_inline)) espan_t *
+R_InsertSpanLocal (surf_t *surf, shift20_t iu, espan_t *l_span_p, shift20_t l_current_iv)
 {
-	if (iu > surf->last_u)
+	const shift20_t last_u = surf->last_u;
+	if (iu > last_u)
 	{
-		espan_t *span;
-
-		span = span_p++;
-		span->u = surf->last_u;
-		span->count = iu - span->u;
-		span->v = current_iv;
+		espan_t *span = l_span_p++;
+		span->u = last_u;
+		span->count = iu - last_u;
+		span->v = l_current_iv;
 		span->pnext = surf->spans;
 		surf->spans = span;
 	}
+	return l_span_p;
 }
 
 /*
@@ -229,22 +227,24 @@ R_InsertSpan (surf_t *surf, shift20_t iu)
 R_CleanupSpan
 ==============
 */
-static void
-R_CleanupSpan (void)
+static inline __attribute__((always_inline)) espan_t *
+R_CleanupSpanLocal (surf_t *l_surf1, espan_t *l_span_p, shift20_t l_current_iv, shift20_t l_tail_u)
 {
 	surf_t		*surf;
 
 	// now that we've reached the right edge of the screen, we're done with any
 	// unfinished surfaces, so emit a span for whatever's on top
-	surf = surfaces[1].next;
-	R_InsertSpan (surf, edge_tail_u_shift20);
+	surf = l_surf1->next;
+	l_span_p = R_InsertSpanLocal (surf, l_tail_u, l_span_p, l_current_iv);
 
 	// reset spanstate for all surfaces in the surface stack
 	do
 	{
 		surf->spanstate = 0;
 		surf = surf->next;
-	} while (surf != &surfaces[1]);
+	} while (surf != l_surf1);
+
+	return l_span_p;
 }
 
 
@@ -256,18 +256,20 @@ D_SurfSearchBackwards
 static surf_t*
 D_SurfSearchBackwards(const surf_t *surf, surf_t *surf2)
 {
+	const int key = surf->key;
+	const qboolean insubmodel = surf->insubmodel;
 	do
 	{
 		do
 		{
 			surf2 = surf2->next;
-		} while (surf->key < surf2->key);
+		} while (key < surf2->key);
 
 		// if it's two surfaces on the same plane, the one that's already
 		// active is in front, so keep going unless it's a bmodel
 		// must be two bmodels in the same leaf; don't care which is really
 		// in front, because they'll never be farthest anyway
-	} while (surf->key == surf2->key && !surf->insubmodel);
+	} while (key == surf2->key && !insubmodel);
 
 	return surf2;
 }
@@ -278,20 +280,21 @@ D_SurfSearchBackwards(const surf_t *surf, surf_t *surf2)
 R_LeadingEdgeBackwards
 ==============
 */
-static void
-R_LeadingEdgeBackwards (const edge_t *edge)
+static inline __attribute__((always_inline)) espan_t *
+R_LeadingEdgeBackwardsLocal (const edge_t *edge, surf_t *l_surfaces, surf_t *l_surf1,
+	espan_t *l_span_p, shift20_t l_current_iv, int l_shift_size)
 {
 	surf_t		*surf, *surf2;
 
 	// it's adding a new surface in, so find the correct place
-	surf = &surfaces[edge->surfs[1]];
+	surf = &l_surfaces[edge->surfs[1]];
 
 	// don't start a span if this is an inverted span, with the end
 	// edge preceding the start edge (that is, we've already seen the
 	// end edge)
 	if (++surf->spanstate == 1)
 	{
-		surf2 = surfaces[1].next;
+		surf2 = l_surf1->next;
 
 		// if it's two surfaces on the same plane, the one that's already
 		// active is in front, so keep going unless it's a bmodel
@@ -301,9 +304,9 @@ R_LeadingEdgeBackwards (const edge_t *edge)
 			shift20_t	iu;
 
 			// emit a span (obscures current top)
-			iu = edge->u >> shift_size;
+			iu = edge->u >> l_shift_size;
 
-			R_InsertSpan (surf2, iu);
+			l_span_p = R_InsertSpanLocal (surf2, iu, l_span_p, l_current_iv);
 
 			// set last_u on the new span
 			surf->last_u = iu;
@@ -319,6 +322,7 @@ R_LeadingEdgeBackwards (const edge_t *edge)
 		surf2->prev->next = surf;
 		surf2->prev = surf;
 	}
+	return l_span_p;
 }
 
 
@@ -327,21 +331,22 @@ R_LeadingEdgeBackwards (const edge_t *edge)
 R_TrailingEdge
 ==============
 */
-static void
-R_TrailingEdge (surf_t *surf, edge_t *edge)
+static inline __attribute__((always_inline)) espan_t *
+R_TrailingEdgeLocal (surf_t *surf, const edge_t *edge, surf_t *l_surf1,
+	espan_t *l_span_p, shift20_t l_current_iv, int l_shift_size)
 {
 	// don't generate a span if this is an inverted span, with the end
 	// edge preceding the start edge (that is, we haven't seen the
 	// start edge yet)
 	if (--surf->spanstate == 0)
 	{
-		if (surf == surfaces[1].next)
+		if (surf == l_surf1->next)
 		{
 			shift20_t iu;
 
 			// emit a span (current top going away)
-			iu = edge->u >> shift_size;
-			R_InsertSpan (surf, iu);
+			iu = edge->u >> l_shift_size;
+			l_span_p = R_InsertSpanLocal (surf, iu, l_span_p, l_current_iv);
 
 			// set last_u on the surface below
 			surf->next->last_u = iu;
@@ -350,6 +355,7 @@ R_TrailingEdge (surf_t *surf, edge_t *edge)
 		surf->prev->next = surf->next;
 		surf->next->prev = surf->prev;
 	}
+	return l_span_p;
 }
 
 /*
@@ -357,18 +363,20 @@ R_TrailingEdge (surf_t *surf, edge_t *edge)
 D_SurfSearchForward
 ==============
 */
-static surf_t*
+static inline __attribute__((always_inline)) surf_t*
 D_SurfSearchForward(const surf_t *surf, surf_t *surf2)
 {
+	const int key = surf->key;
+	const qboolean insubmodel = surf->insubmodel;
 	do
 	{
 		do
 		{
 			surf2 = surf2->next;
-		} while (surf->key > surf2->key);
+		} while (key > surf2->key);
 		// if it's two surfaces on the same plane, the one that's already
 		// active is in front, so keep going unless it's a bmodel
-	} while (surf->key == surf2->key && !surf->insubmodel);
+	} while (key == surf2->key && !insubmodel);
 
 	return surf2;
 }
@@ -382,6 +390,8 @@ static surf_t*
 R_LeadingEdgeSearch (const edge_t *edge, const surf_t *surf, surf_t *surf2)
 {
 	float	testzi, newzitop;
+	const int l_shift_size = shift_size;
+	const float l_fv = fv;
 
 	do
 	{
@@ -393,12 +403,12 @@ R_LeadingEdgeSearch (const edge_t *edge, const surf_t *surf, surf_t *surf2)
 			return surf2;
 
 		// must be two bmodels in the same leaf; sort on 1/z
-		fu = (float)(edge->u - (1<<shift_size) + 1) * (1.0 / (1<<shift_size));
-		newzi = surf->d_ziorigin + fv*surf->d_zistepv +
+		fu = (float)(edge->u - (1<<l_shift_size) + 1) * (1.0 / (1<<l_shift_size));
+		newzi = surf->d_ziorigin + l_fv*surf->d_zistepv +
 				fu*surf->d_zistepu;
 		newzibottom = newzi * 0.99;
 
-		testzi = surf2->d_ziorigin + fv*surf2->d_zistepv +
+		testzi = surf2->d_ziorigin + l_fv*surf2->d_zistepv +
 				fu*surf2->d_zistepu;
 
 		if (newzibottom >= testzi)
@@ -418,7 +428,7 @@ R_LeadingEdgeSearch (const edge_t *edge, const surf_t *surf, surf_t *surf2)
 R_InsertBeforeSurf
 ==============
 */
-static void
+static inline __attribute__((always_inline)) void
 R_InsertBeforeSurf(surf_t *surf, surf_t *surf2)
 {
 	surf->next = surf2;
@@ -432,20 +442,22 @@ R_InsertBeforeSurf(surf_t *surf, surf_t *surf2)
 R_EmitSpanBeforeTop
 ==============
 */
-static void
-R_EmitSpanBeforeTop(const edge_t *edge, surf_t *surf, surf_t *surf2)
+static inline __attribute__((always_inline)) espan_t *
+R_EmitSpanBeforeTopLocal(const edge_t *edge, surf_t *surf, surf_t *surf2,
+	espan_t *l_span_p, shift20_t l_current_iv, int l_shift_size)
 {
 	shift20_t	iu;
 
-	iu = edge->u >> shift_size;
+	iu = edge->u >> l_shift_size;
 
-	R_InsertSpan (surf2, iu);
+	l_span_p = R_InsertSpanLocal (surf2, iu, l_span_p, l_current_iv);
 
 	// set last_u on the new span
 	surf->last_u = iu;
 
 	// insert before surf2
 	R_InsertBeforeSurf(surf, surf2);
+	return l_span_p;
 }
 
 /*
@@ -453,15 +465,16 @@ R_EmitSpanBeforeTop(const edge_t *edge, surf_t *surf, surf_t *surf2)
 R_LeadingEdge
 ==============
 */
-static void
-R_LeadingEdge (const edge_t *edge)
+static inline __attribute__((always_inline)) espan_t *
+R_LeadingEdgeLocal (const edge_t *edge, surf_t *l_surfaces, surf_t *l_surf1,
+	espan_t *l_span_p, shift20_t l_current_iv, int l_shift_size, float l_fv)
 {
 	if (edge->surfs[1])
 	{
 		surf_t		*surf;
 
 		// it's adding a new surface in, so find the correct place
-		surf = &surfaces[edge->surfs[1]];
+		surf = &l_surfaces[edge->surfs[1]];
 
 		// don't start a span if this is an inverted span, with the end
 		// edge preceding the start edge (that is, we've already seen the
@@ -469,36 +482,37 @@ R_LeadingEdge (const edge_t *edge)
 		if (++surf->spanstate == 1)
 		{
 			surf_t		*surf2;
+			const int	key = surf->key;
 
-			surf2 = surfaces[1].next;
+			surf2 = l_surf1->next;
 
-			if (surf->key < surf2->key)
+			if (key < surf2->key)
 			{
 				// emit a span (obscures current top)
-				R_EmitSpanBeforeTop(edge, surf, surf2);
-				return;
+				return R_EmitSpanBeforeTopLocal(edge, surf, surf2,
+					l_span_p, l_current_iv, l_shift_size);
 			}
 
 			// if it's two surfaces on the same plane, the one that's already
 			// active is in front, so keep going unless it's a bmodel
-			if (surf->insubmodel && (surf->key == surf2->key))
+			if (surf->insubmodel && (key == surf2->key))
 			{
 				float	fu, newzi, testzi, newzitop, newzibottom;
 
 				// must be two bmodels in the same leaf; sort on 1/z
-				fu = (float)(edge->u - (1<<shift_size) + 1) * (1.0 / (1<<shift_size));
-				newzi = surf->d_ziorigin + fv*surf->d_zistepv +
+				fu = (float)(edge->u - (1<<l_shift_size) + 1) * (1.0 / (1<<l_shift_size));
+				newzi = surf->d_ziorigin + l_fv*surf->d_zistepv +
 						fu*surf->d_zistepu;
 				newzibottom = newzi * 0.99;
 
-				testzi = surf2->d_ziorigin + fv*surf2->d_zistepv +
+				testzi = surf2->d_ziorigin + l_fv*surf2->d_zistepv +
 						fu*surf2->d_zistepu;
 
 				if (newzibottom >= testzi)
 				{
 					// emit a span (obscures current top)
-					R_EmitSpanBeforeTop(edge, surf, surf2);
-					return;
+					return R_EmitSpanBeforeTopLocal(edge, surf, surf2,
+						l_span_p, l_current_iv, l_shift_size);
 				}
 
 				newzitop = newzi * 1.01;
@@ -507,8 +521,8 @@ R_LeadingEdge (const edge_t *edge)
 					if (surf->d_zistepu >= surf2->d_zistepu)
 					{
 						// emit a span (obscures current top)
-						R_EmitSpanBeforeTop(edge, surf, surf2);
-						return;
+						return R_EmitSpanBeforeTopLocal(edge, surf, surf2,
+							l_span_p, l_current_iv, l_shift_size);
 					}
 				}
 			}
@@ -518,6 +532,7 @@ R_LeadingEdge (const edge_t *edge)
 			R_InsertBeforeSurf(surf, surf2);
 		}
 	}
+	return l_span_p;
 }
 
 /*
@@ -530,10 +545,19 @@ R_GenerateSpans (void)
 {
 	edge_t			*edge;
 	surf_t			*surf;
+	/* (Miyoo Mini port: keep globals in locals across the scanline loop so stores to surf_t
+	 * and espan_t do not force reloads under -fno-strict-aliasing.) */
+	surf_t *const		l_surfaces = surfaces;
+	surf_t *const		l_surf1 = &l_surfaces[1];
+	espan_t			*l_span_p = span_p;
+	const shift20_t		l_current_iv = current_iv;
+	const shift20_t		l_tail_u = edge_tail_u_shift20;
+	const int		l_shift_size = shift_size;
+	const float		l_fv = fv;
 
 	// clear active surfaces to just the background surface
-	surfaces[1].next = surfaces[1].prev = &surfaces[1];
-	surfaces[1].last_u = edge_head_u_shift20;
+	l_surf1->next = l_surf1->prev = l_surf1;
+	l_surf1->last_u = edge_head_u_shift20;
 
 	// generate spans
 	for (edge=edge_head.next ; edge != &edge_tail; edge=edge->next)
@@ -541,18 +565,20 @@ R_GenerateSpans (void)
 		if (edge->surfs[0])
 		{
 			// it has a left surface, so a surface is going away for this span
-			surf = &surfaces[edge->surfs[0]];
+			surf = &l_surfaces[edge->surfs[0]];
 
-			R_TrailingEdge (surf, edge);
+			l_span_p = R_TrailingEdgeLocal (surf, edge, l_surf1,
+				l_span_p, l_current_iv, l_shift_size);
 
 			if (!edge->surfs[1])
 				continue;
 		}
 
-		R_LeadingEdge (edge);
+		l_span_p = R_LeadingEdgeLocal (edge, l_surfaces, l_surf1,
+			l_span_p, l_current_iv, l_shift_size, l_fv);
 	}
 
-	R_CleanupSpan ();
+	span_p = R_CleanupSpanLocal (l_surf1, l_span_p, l_current_iv, l_tail_u);
 }
 
 /*
@@ -564,22 +590,30 @@ static void
 R_GenerateSpansBackward (void)
 {
 	edge_t			*edge;
+	surf_t *const		l_surfaces = surfaces;
+	surf_t *const		l_surf1 = &l_surfaces[1];
+	espan_t			*l_span_p = span_p;
+	const shift20_t		l_current_iv = current_iv;
+	const shift20_t		l_tail_u = edge_tail_u_shift20;
+	const int		l_shift_size = shift_size;
 
 	// clear active surfaces to just the background surface
-	surfaces[1].next = surfaces[1].prev = &surfaces[1];
-	surfaces[1].last_u = edge_head_u_shift20;
+	l_surf1->next = l_surf1->prev = l_surf1;
+	l_surf1->last_u = edge_head_u_shift20;
 
 	// generate spans
 	for (edge=edge_head.next ; edge != &edge_tail; edge=edge->next)
 	{
 		if (edge->surfs[0])
-			R_TrailingEdge (&surfaces[edge->surfs[0]], edge);
+			l_span_p = R_TrailingEdgeLocal (&l_surfaces[edge->surfs[0]], edge, l_surf1,
+				l_span_p, l_current_iv, l_shift_size);
 
 		if (edge->surfs[1])
-			R_LeadingEdgeBackwards (edge);
+			l_span_p = R_LeadingEdgeBackwardsLocal (edge, l_surfaces, l_surf1,
+				l_span_p, l_current_iv, l_shift_size);
 	}
 
-	R_CleanupSpan ();
+	span_p = R_CleanupSpanLocal (l_surf1, l_span_p, l_current_iv, l_tail_u);
 }
 
 static void D_DrawSurfaces (entity_t *currententity, const surf_t *surface);
@@ -604,7 +638,7 @@ R_ScanEdges (entity_t *currententity, const surf_t *surface)
 	surf_t		*s;
 
 	// clear the surface span pointers
-	for (s = &surfaces[1] ; s<surf_max ; s++)
+	for (s = &surfaces[1] ; s<surface ; s++)
 	{
 		s->last_u = 0;
 		s->spans = NULL;

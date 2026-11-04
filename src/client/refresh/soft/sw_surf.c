@@ -22,16 +22,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "header/local.h"
 #include "header/sw_mt.h"
 
-/* (per thread: surface caches are built on both, sw_mt.c) */
-static SW_TLS int		sourcetstep;
-static SW_TLS void		*prowdestbase;
-static SW_TLS unsigned char	*pbasesource;
-static SW_TLS int		r_stepback;
-static SW_TLS int		r_lightwidth;
-static SW_TLS int		r_numvblocks;
-static SW_TLS unsigned char	*r_source, *r_sourcemax;
-static SW_TLS unsigned		*r_lightptr;
-
 void R_BuildLightMap (drawsurf_t *drawsurf);
 
 static int	sc_size;
@@ -57,14 +47,11 @@ R_GreyscaledLight(const light3_t light)
 }
 
 static void
-R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
-						int level, light3_t lightleft, light3_t lightright)
+R_DrawSurfaceBlock_Light (pixel_t *prowdest, const pixel_t *psource, size_t size,
+						int level, const light3_t lightleft, const light3_t lightright,
+						const pixel_t *colormap, const byte *c16to8)
 {
 	int light_masked_right, light_masked_left;
-	/* (Miyoo Mini port: the tables in locals: gcc reloaded the global pointers after every
-	 * texel store, which may alias them. Same lookups.) */
-	const pixel_t *const colormap = vid_colormap;
-	const byte *const c16to8 = d_16to8table;
 
 	light_masked_right = R_GreyscaledLight(lightright);
 	if (light_masked_right != LIGHTMASK)
@@ -75,18 +62,11 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 	// Full same light from both side
 	if (light_masked_right != LIGHTMASK && light_masked_left == light_masked_right)
 	{
-		pixel_t *dest, *dest_max, *src;
+		size_t b;
 
-		dest = prowdest;
-		dest_max = prowdest + size;
-		src = psource;
-
-		while (dest < dest_max)
+		for (b = 0; b < size; b++)
 		{
-			*dest = colormap[*src + light_masked_right];
-
-			dest++;
-			src++;
+			prowdest[b] = colormap[psource[b] + light_masked_right];
 		}
 
 		return;
@@ -103,7 +83,7 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 		int light = lightright[0];
 		int b;
 
-		for (b = (size - 1); b >= 0; b--)
+		for (b = (int)(size - 1); b >= 0; b--)
 		{
 			prowdest[b] = colormap[psource[b] + (light & LIGHTMASK)];
 			light += lightstep;
@@ -114,89 +94,62 @@ R_DrawSurfaceBlock_Light (pixel_t *prowdest, pixel_t *psource, size_t size,
 
 	// same color light shades
 	{
-		int b, j;
-		light3_t lightstep;
-		int l0, l1, l2;
+		int b;
+		const int lstep0 = ((int)lightleft[0] - (int)lightright[0]) >> level;
+		const int lstep1 = ((int)lightleft[1] - (int)lightright[1]) >> level;
+		const int lstep2 = ((int)lightleft[2] - (int)lightright[2]) >> level;
+		int l0 = lightright[0];
+		int l1 = lightright[1];
+		int l2 = lightright[2];
 
-		for(j=0; j<3; j++)
+		for (b = (int)(size - 1); b >= 0; b--)
 		{
-			int lighttemp;
-
-			lighttemp = lightleft[j] - lightright[j];
-			lightstep[j] = lighttemp >> level;
-		}
-
-		l0 = lightright[0];
-		l1 = lightright[1];
-		l2 = lightright[2];
-
-		for (b=(size-1); b>=0; b--)
-		{
-			pixel_t pix;
-
-			pix = psource[b];
+			pixel_t pix = psource[b];
 			prowdest[b] = R_ApplyLightTab(pix, l0, l1, l2, colormap, c16to8);
 
-			l0 += lightstep[0];
-			l1 += lightstep[1];
-			l2 += lightstep[2];
+			l0 += lstep0;
+			l1 += lstep1;
+			l2 += lstep2;
 		}
 	}
 }
 
 
-/*
-================
-R_DrawSurfaceBlock8_anymip
-================
-*/
-static void
-R_DrawSurfaceBlock8_anymip (int level, int surfrowbytes)
+static __attribute__((noinline)) void
+R_DrawSurfaceBlockRGB(pixel_t *prowdest, const pixel_t *psource, int blocksize, int blockdivshift,
+	int sourcetstep, int surfrowbytes, const light_t *r_lightptr, const light_t *next_lightptr,
+	const pixel_t *colormap, const byte *c16to8)
 {
-	int		v, i, size;
-	pixel_t	*psource, *prowdest;
+	light3_t lightleft, lightright;
+	light3_t lightleftstep, lightrightstep;
+	int i;
 
-	size = 1 << level;
-	psource = pbasesource;
-	prowdest = prowdestbase;
-
-	for (v=0 ; v<r_numvblocks ; v++)
+	memcpy(lightleft, r_lightptr, sizeof(light3_t));
+	memcpy(lightright, r_lightptr + 3, sizeof(light3_t));
+	for (i = 0; i < 3; i++)
 	{
-		light3_t	lightleft, lightright;
-		light3_t	lightleftstep, lightrightstep;
+		lightleftstep[i] = (next_lightptr[i] - lightleft[i]) >> blockdivshift;
+		lightrightstep[i] = (next_lightptr[i + 3] - lightright[i]) >> blockdivshift;
+	}
 
-		// FIXME: use delta rather than both right and left, like ASM?
-		memcpy(lightleft, r_lightptr, sizeof(light3_t));
-		memcpy(lightright, r_lightptr + 3, sizeof(light3_t));
-		r_lightptr += r_lightwidth * 3;
-		for(i=0; i<3; i++)
+	for (i = 0; i < blocksize; i++)
+	{
+		int j;
+
+		R_DrawSurfaceBlock_Light(prowdest, psource, blocksize, blockdivshift,
+			lightleft, lightright, colormap, c16to8);
+
+		psource += sourcetstep;
+
+		for (j = 0; j < 3; j++)
 		{
-			lightleftstep[i] = (r_lightptr[i] - lightleft[i]) >> level;
-			lightrightstep[i] = (r_lightptr[i + 3] - lightright[i]) >> level;
+			lightright[j] += lightrightstep[j];
+			lightleft[j] += lightleftstep[j];
 		}
 
-		for (i=0 ; i<size ; i++)
-		{
-			int j;
-
-			R_DrawSurfaceBlock_Light(prowdest, psource, size, level, lightleft, lightright);
-
-			psource += sourcetstep;
-
-			for(j=0; j<3; j++)
-			{
-				lightright[j] += lightrightstep[j];
-				lightleft[j] += lightleftstep[j];
-			}
-
-			prowdest += surfrowbytes;
-		}
-
-		if (psource >= r_sourcemax)
-			psource -= r_stepback;
+		prowdest += surfrowbytes;
 	}
 }
-
 
 /*
 ===============
@@ -214,7 +167,13 @@ R_DrawSurface (drawsurf_t *drawsurf)
 	unsigned char	*pcolumndest;
 	image_t		*mt;
 	int		blockdivshift;
-	int		r_numhblocks;
+	int		r_numhblocks, r_numvblocks;
+	int		r_lightwidth, sourcetstep, r_stepback;
+	unsigned char	*r_source, *r_sourcemax;
+	const int	 surfrowbytes = drawsurf->rowbytes;
+	const pixel_t	* __restrict const colormap = vid_colormap;
+	const light_t	* __restrict const blights = blocklights;
+	const light_t	* const blight_max = blocklight_max;
 
 	mt = drawsurf->image;
 
@@ -255,19 +214,81 @@ R_DrawSurface (drawsurf_t *drawsurf)
 
 	for (u=0 ; u<r_numhblocks; u++)
 	{
-		r_lightptr = blocklights + u * 3;
+		const light_t * __restrict r_lightptr = blights + u * 3;
+		pixel_t * __restrict prowdest;
+		const pixel_t * __restrict psource;
+		int v;
 
-		if (r_lightptr >= blocklight_max)
+		if (r_lightptr >= blight_max)
 		{
 			r_outoflights = true;
 			continue;
 		}
 
-		prowdestbase = pcolumndest;
+		prowdest = pcolumndest;
+		psource = basetptr + soffset;
 
-		pbasesource = basetptr + soffset;
+		for (v = 0; v < r_numvblocks; v++)
+		{
+			const light_t * __restrict const next_lightptr = r_lightptr + r_lightwidth * 3;
+			const light_t tl0 = r_lightptr[0], tr0 = r_lightptr[3];
+			const light_t bl0 = next_lightptr[0], br0 = next_lightptr[3];
 
-		R_DrawSurfaceBlock8_anymip(NUM_MIPS - drawsurf->surfmip, drawsurf->rowbytes);
+			if (tl0 == r_lightptr[1] && tl0 == r_lightptr[2] &&
+			    tr0 == r_lightptr[4] && tr0 == r_lightptr[5] &&
+			    bl0 == next_lightptr[1] && bl0 == next_lightptr[2] &&
+			    br0 == next_lightptr[4] && br0 == next_lightptr[5])
+			{
+				int ll = (int)tl0;
+				int lr = (int)tr0;
+				const int llstep = ((int)bl0 - ll) >> blockdivshift;
+				const int lrstep = ((int)br0 - lr) >> blockdivshift;
+				int i;
+
+				r_lightptr = next_lightptr;
+				for (i = 0; i < blocksize; i++)
+				{
+					const int lmask = lr & LIGHTMASK;
+
+					if ((ll & LIGHTMASK) == lmask)
+					{
+						int b;
+						for (b = 0; b < blocksize; b++)
+						{
+							prowdest[b] = colormap[psource[b] + lmask];
+						}
+					}
+					else
+					{
+						const int lightstep = (ll - lr) >> blockdivshift;
+						int light = lr;
+						int b;
+						for (b = blocksize - 1; b >= 0; b--)
+						{
+							prowdest[b] = colormap[psource[b] + (light & LIGHTMASK)];
+							light += lightstep;
+						}
+					}
+
+					psource += sourcetstep;
+					lr += lrstep;
+					ll += llstep;
+					prowdest += surfrowbytes;
+				}
+			}
+			else
+			{
+				R_DrawSurfaceBlockRGB(prowdest, psource, blocksize, blockdivshift,
+					sourcetstep, surfrowbytes, r_lightptr, next_lightptr,
+					colormap, d_16to8table);
+				r_lightptr = next_lightptr;
+				psource += sourcetstep * blocksize;
+				prowdest += surfrowbytes * blocksize;
+			}
+
+			if (psource >= r_sourcemax)
+				psource -= r_stepback;
+		}
 
 		soffset = soffset + blocksize;
 		if (soffset >= smax)

@@ -83,9 +83,10 @@ void SW_MT_PolyBegin(void);
 void SW_MT_PolyFlush(void);
 void SW_MT_PolyEnd(void);
 qboolean SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t *b,
-	const finalvert_t *c);
+	const finalvert_t *c, int xdenom);
 void R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalvert_t *b,
 	const finalvert_t *c);
+void R_DrawRecordedTriangle(const entity_t *currententity, const compactvert_t *v, int xdenom);
 /* while replaying models: this thread's z-damage box (minu, maxu, minv, maxv), else NULL */
 extern SW_TLS int *sw_zdamage;
 

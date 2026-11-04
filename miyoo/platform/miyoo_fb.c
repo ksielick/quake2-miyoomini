@@ -247,6 +247,10 @@ static int s_panPending = -1;	/* the page to show, -1: none */
 /* the 2D engine's fence of a blit into that page still running (MiyooFb_PresentI8): the pan
    thread waits for it before showing the page, so the game thread doesn't; -1: none */
 static int s_panFence = -1;
+static int s_panBlitBusy;
+static void *s_panI8Virt;
+static mi_phy s_panI8Phys;
+static int s_panI8W, s_panI8H;
 
 /* Max FPS (the video menu's "max fps", vid_maxfps; MiyooFb_SetMaxFps), as TyrQuake-Miyoo's:
  *   30: each page stays on the panel for two refreshes (29.83 fps): the pan thread waits for
@@ -303,11 +307,45 @@ static void *PanThread(void *arg)
 			pthread_cond_wait(&s_panCond, &s_panMutex);
 		const int page = s_panPending;
 		const int fence = s_panFence;
+		void *const i8Virt = s_panI8Virt;
+		const mi_phy i8Phys = s_panI8Phys;
+		const int i8W = s_panI8W, i8H = s_panI8H;
 		s_panFence = -1;
+		s_panI8Virt = NULL;
 		pthread_mutex_unlock(&s_panMutex);
 
-		if (fence >= 0)
+		if (i8Virt)
+		{
+			mi_surface s = { i8Phys, MI_FMT_I8, (uint32_t)i8W, (uint32_t)i8H, (uint32_t)i8W };
+			mi_surface d = { (mi_phy)s_fbPhys + (mi_phy)page * s_h * s_lineBytes, MI_FMT_ARGB8888,
+				(uint32_t)s_w, (uint32_t)s_h, (uint32_t)s_lineBytes };
+			mi_rect sr = { 0, 0, (uint32_t)i8W, (uint32_t)i8H };
+			mi_rect dr = { 0, 0, (uint32_t)s_w, (uint32_t)s_h };
+			mi_opt o;
+			uint16_t bfence = 0;
+
+			memset(&o, 0, sizeof(o));
+			o.clip = dr;
+			o.src_blend = MI_BLD_ONE;
+			o.dst_blend = MI_BLD_ZERO;
+			o.mirror = s_rotate ? MI_MIRROR_BOTH : MI_MIRROR_NONE;
+			mi.flush(i8Virt, (uint32_t)(i8W * i8H));
+			if (mi.blit(&s, &sr, &d, &dr, &o, &bfence) == 0)
+				mi.wait(1, bfence);
+
+			pthread_mutex_lock(&s_panMutex);
+			s_panBlitBusy = 0;
+			pthread_cond_broadcast(&s_panCond);
+			pthread_mutex_unlock(&s_panMutex);
+		}
+		else if (fence >= 0)
+		{
 			mi.wait(1, (uint16_t)fence);
+			pthread_mutex_lock(&s_panMutex);
+			s_panBlitBusy = 0;
+			pthread_cond_broadcast(&s_panCond);
+			pthread_mutex_unlock(&s_panMutex);
+		}
 
 		s_var.yoffset = page * s_h;
 		ioctl(s_fd, FBIOPAN_DISPLAY, &s_var);
@@ -603,13 +641,17 @@ int MiyooFb_I8Usable(void)
 
 static int I8Buffer(int w, int h)
 {
-	const uint32_t size = (uint32_t)w * h;
+	/* two 8-bit frame buffers (for swap_frames[0..1] in sw_main.c) so the renderer draws
+	 * directly into cached MMA memory without a 300 KB memcpy on every present */
+	const uint32_t size = (uint32_t)w * h * 2;
 	void *virt = NULL;
 
 	if (s_i8.px && s_i8.w == w && s_i8.h == h)
 		return 1;
 	if (s_i8.px)
 	{
+		if (s_pages > 1)
+			WaitPan();
 		mi.wait(1, 0);
 		mi.munmap(s_i8.px, s_i8.size);
 		mi.mma_free(s_i8.phys);
@@ -622,6 +664,7 @@ static int I8Buffer(int w, int h)
 		mi.mma_free(s_i8.phys);
 		return 0;
 	}
+	memset(virt, 0, size);
 	s_i8.px = virt;
 	s_i8.size = size;
 	s_i8.w = w;
@@ -629,9 +672,22 @@ static int I8Buffer(int w, int h)
 	return 1;
 }
 
+uint8_t *MiyooFb_GetI8Buffers(int w, int h)
+{
+	if (!s_mem || !MiyooFb_I8Usable() || w != s_w || h != s_h || !I8Buffer(w, h))
+		return NULL;
+	if (s_pages > 1)
+		WaitPan();
+	memset(s_i8.px, 0, s_i8.size);
+	return s_i8.px;
+}
+
 /* idx: w x h palette indices; pal: 256 entries 0x00RRGGBB. 0: not shown (the caller converts) */
 int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
 {
+	const uint32_t frameBytes = (uint32_t)w * h;
+	void *srcVirt;
+	mi_phy srcPhys;
 	int x, y;
 
 	if (!s_mem || !MiyooFb_I8Usable() || w != s_w || h != s_h || !I8Buffer(w, h))
@@ -643,6 +699,11 @@ int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
 		int busy;
 		pthread_mutex_lock(&s_panMutex);
 		busy = s_panPending >= 0;
+		if (busy)
+		{
+			while (s_panBlitBusy)
+				pthread_cond_wait(&s_panCond, &s_panMutex);
+		}
 		pthread_mutex_unlock(&s_panMutex);
 		if (busy)
 		{
@@ -690,9 +751,36 @@ int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
 	}
 	n++;
 
-	memcpy(s_i8.px, idx, s_i8.size);
+	if (idx >= s_i8.px && idx + frameBytes <= s_i8.px + s_i8.size)
 	{
-		mi_surface s = { s_i8.phys, MI_FMT_I8, (uint32_t)w, (uint32_t)h, (uint32_t)w };
+		srcVirt = (void *)idx;
+		srcPhys = s_i8.phys + (mi_phy)(idx - s_i8.px);
+	}
+	else
+	{
+		memcpy(s_i8.px, idx, frameBytes);
+		srcVirt = s_i8.px;
+		srcPhys = s_i8.phys;
+	}
+
+	if (!check && s_pages > 1 && n > 1)
+	{
+		pthread_mutex_lock(&s_panMutex);
+		s_panI8Virt = srcVirt;
+		s_panI8Phys = srcPhys;
+		s_panI8W = w;
+		s_panI8H = h;
+		s_panBlitBusy = 1;
+		s_panFence = -1;
+		s_panPending = target;
+		pthread_cond_signal(&s_panCond);
+		pthread_mutex_unlock(&s_panMutex);
+		Stats(NowMs() - copyStart);
+		return 1;
+	}
+
+	{
+		mi_surface s = { srcPhys, MI_FMT_I8, (uint32_t)w, (uint32_t)h, (uint32_t)w };
 		mi_surface d = { (mi_phy)s_fbPhys + (mi_phy)target * s_h * s_lineBytes, MI_FMT_ARGB8888,
 			(uint32_t)s_w, (uint32_t)s_h, (uint32_t)s_lineBytes };
 		mi_rect sr = { 0, 0, (uint32_t)w, (uint32_t)h }, dr = { 0, 0, (uint32_t)s_w, (uint32_t)s_h };
@@ -703,16 +791,13 @@ int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
 		o.src_blend = MI_BLD_ONE;
 		o.dst_blend = MI_BLD_ZERO;
 		o.mirror = s_rotate ? MI_MIRROR_BOTH : MI_MIRROR_NONE;
-		mi.flush(s_i8.px, s_i8.size);
+		mi.flush(srcVirt, frameBytes);
 		if (mi.blit(&s, &sr, &d, &dr, &o, &fence))
 		{
 			fprintf(stderr, "miyoo: MI_GFX I8 blit failed: the CPU converts the frames\n");
 			mi.set_palette = NULL;
 			return 0;
 		}
-		/* the pan thread waits for the blit (s_panFence); the next present waits for the pan
-		   (WaitPan), so the buffer and the palette are free again by then. Checks, and a
-		   single page, wait here. */
 		if (check || s_pages <= 1)
 			mi.wait(1, fence);
 	}
@@ -742,6 +827,7 @@ int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h)
 		pthread_mutex_lock(&s_panMutex);
 		s_panPending = target;
 		s_panFence = check ? -1 : fence;
+		s_panBlitBusy = check ? 0 : 1;
 		pthread_cond_signal(&s_panCond);
 		pthread_mutex_unlock(&s_panMutex);
 	}

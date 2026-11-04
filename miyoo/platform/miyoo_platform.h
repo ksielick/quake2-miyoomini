@@ -17,6 +17,7 @@ void MiyooFb_FreeFrame(uint32_t *px);
 void MiyooFb_SetMaxFps(float fps);
 /* 8-bit frames converted by the 2D engine (MI_GFX I8; MIYOO_GFX_I8=0: never) */
 int MiyooFb_I8Usable(void);
+uint8_t *MiyooFb_GetI8Buffers(int w, int h);
 int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h);
 
 /* miyoo_sdl.c, for ref_soft (exported): the 8-bit frame the next SDL_RenderPresent shows
@@ -24,5 +25,7 @@ int MiyooFb_PresentI8(const uint8_t *idx, const uint32_t *pal, int w, int h);
  * texture as usual). pal: 256 entries 0x00RRGGBB. */
 __attribute__((visibility("default")))
 int Miyoo_SetIndexedFrame(const uint8_t *idx, const uint32_t *pal, int w, int h);
+__attribute__((visibility("default")))
+uint8_t *Miyoo_GetIndexedBuffers(int w, int h);
 
 #endif

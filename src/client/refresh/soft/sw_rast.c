@@ -201,6 +201,13 @@ R_EmitSkyBox(entity_t *currententity, const model_t *currentmodel, qboolean insu
 	r_currentkey = oldkey;	// bsp sorting order
 }
 
+static inline __attribute__((always_inline)) int
+R_FastCeilF(float x)
+{
+	int i = (int)x;
+	return i + ((float)i < x);
+}
+
 /*
 ================
 R_EmitEdge
@@ -253,7 +260,7 @@ R_EmitEdge (mvertex_t *pv0, mvertex_t *pv1, medge_t *r_pedge, qboolean r_nearzio
 		if (v0 > r_refdef.fvrectbottom_adj)
 			v0 = r_refdef.fvrectbottom_adj;
 
-		ceilv0 = (int) ceil(v0);
+		ceilv0 = R_FastCeilF(v0);
 	}
 
 	world = &pv1->position[0];
@@ -293,7 +300,7 @@ R_EmitEdge (mvertex_t *pv0, mvertex_t *pv1, medge_t *r_pedge, qboolean r_nearzio
 
 	r_emitted = 1;
 
-	r_ceilv1 = (int) ceil(r_v1);
+	r_ceilv1 = R_FastCeilF(r_v1);
 
 
 	// create the edge
@@ -342,46 +349,41 @@ R_EmitEdge (mvertex_t *pv0, mvertex_t *pv1, medge_t *r_pedge, qboolean r_nearzio
 		u = r_u1 + ((float)v - r_v1) * u_step;
 	}
 
-	edge->u_step = u_step*(1<<shift_size);
-	edge->u = u*(1<<shift_size) + (1<<shift_size) - 1;
-
-	// we need to do this to avoid stepping off the edges if a very nearly
-	// horizontal edge is less than epsilon above a scan, and numeric error causes
-	// it to incorrectly extend to the scan, and the extension of the line goes off
-	// the edge of the screen
-	// FIXME: is this actually needed?
-	if (edge->u < r_refdef.vrect_x_adj_shift20)
 	{
-		edge->u = r_refdef.vrect_x_adj_shift20;
-	}
-	else if (edge->u > r_refdef.vrectright_adj_shift20)
-	{
-		edge->u = r_refdef.vrectright_adj_shift20;
-	}
+		const int l_shift = 1 << shift_size;
+		const int min_u = r_refdef.vrect_x_adj_shift20;
+		const int max_u = r_refdef.vrectright_adj_shift20;
+		edge_t **const l_newedges = newedges;
+		edge_t **const l_removeedges = removeedges;
+		int eu;
 
-	//
-	// sort the edge in normally
-	//
-	u_check = edge->u;
-	if (edge->surfs[0])
-		u_check++;	// sort trailers after leaders
+		edge->u_step = u_step * l_shift;
+		eu = u * l_shift + l_shift - 1;
+		if (eu < min_u)
+			eu = min_u;
+		else if (eu > max_u)
+			eu = max_u;
+		edge->u = eu;
 
-	if (!newedges[v] || newedges[v]->u >= u_check)
-	{
-		edge->next = newedges[v];
-		newedges[v] = edge;
-	}
-	else
-	{
-		pcheck = newedges[v];
-		while (pcheck->next && pcheck->next->u < u_check)
-			pcheck = pcheck->next;
-		edge->next = pcheck->next;
-		pcheck->next = edge;
-	}
+		u_check = eu + (side == 0);
 
-	edge->nextremove = removeedges[v2];
-	removeedges[v2] = edge;
+		pcheck = l_newedges[v];
+		if (!pcheck || pcheck->u >= u_check)
+		{
+			edge->next = pcheck;
+			l_newedges[v] = edge;
+		}
+		else
+		{
+			while (pcheck->next && pcheck->next->u < u_check)
+				pcheck = pcheck->next;
+			edge->next = pcheck->next;
+			pcheck->next = edge;
+		}
+
+		edge->nextremove = l_removeedges[v2];
+		l_removeedges[v2] = edge;
+	}
 }
 
 /*

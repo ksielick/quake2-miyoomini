@@ -161,6 +161,7 @@ R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalv
 {
 	int dv1_ab, dv0_ac;
 	int dv0_ab, dv1_ac;
+	int xdenom;
 
 	/*
 	d_xdenom = ( a->v[1] - b->v[1] ) * ( a->v[0] - c->v[0] ) -
@@ -179,41 +180,35 @@ R_DrawTriangle(const entity_t *currententity, const finalvert_t *a, const finalv
 	if ( !( dv0_ac | dv1_ac ) )
 		return;
 
-	d_xdenom = ( dv0_ac * dv1_ab ) - ( dv0_ab * dv1_ac );
+	xdenom = ( dv0_ac * dv1_ab ) - ( dv0_ab * dv1_ac );
 
-	if ( d_xdenom < 0 && SW_MT_RecordTriangle(currententity, a, b, c) )
+	if ( xdenom < 0 && SW_MT_RecordTriangle(currententity, a, b, c, xdenom) )
 	{
 		return;	/* drawn later on both threads (sw_mt.c) */
 	}
 
-	if ( d_xdenom < 0 )
+	if ( xdenom < 0 )
 	{
-		memcpy(&r_p0, &a->cv, sizeof(compactvert_t));
-		memcpy(&r_p1, &b->cv, sizeof(compactvert_t));
-		memcpy(&r_p2, &c->cv, sizeof(compactvert_t));
+		d_xdenom = xdenom;
+		r_p0 = a->cv;
+		r_p1 = b->cv;
+		r_p2 = c->cv;
 
 		R_PolysetSetEdgeTable ();
 		R_RasterizeAliasPolySmooth(currententity);
 	}
 }
 
-static void
-R_PushEdgesSpan(int u, int v, int count,
-		pixel_t* d_ptex, int d_sfrac, int d_tfrac, light3_t d_light, zvalue_t d_zi)
+void
+R_DrawRecordedTriangle(const entity_t *currententity, const compactvert_t *v, int xdenom)
 {
-	d_pedgespanpackage->u = u;
-	d_pedgespanpackage->v = v;
-	d_pedgespanpackage->count = count;
-	d_pedgespanpackage->ptex = d_ptex;
+	d_xdenom = xdenom;
+	r_p0 = v[0];
+	r_p1 = v[1];
+	r_p2 = v[2];
 
-	d_pedgespanpackage->sfrac = d_sfrac;
-	d_pedgespanpackage->tfrac = d_tfrac;
-
-	// FIXME: need to clamp l, s, t, at both ends?
-	memcpy(d_pedgespanpackage->light, d_light, sizeof(light3_t));
-	d_pedgespanpackage->zi = d_zi;
-
-	d_pedgespanpackage++;
+	R_PolysetSetEdgeTable ();
+	R_RasterizeAliasPolySmooth(currententity);
 }
 
 /*
@@ -331,13 +326,13 @@ quotient must fit in 32 bits.
 FIXME: GET RID OF THIS! (FloorDivMod)
 ====================
 */
-static void
+static inline __attribute__((always_inline)) void
 FloorDivMod(int numer, int denom, int *quo, int *rem)
 {
 	int q, r;
 
-// just exclude ARM32 with FPU, e.g. Pi 1
-#if defined(__i386__) || defined(__amd64__)
+// just exclude ARM32 without hardware IDIV, e.g. Pi 1
+#if defined(__i386__) || defined(__amd64__) || defined(__ARM_ARCH_EXT_IDIV__)
 	q = numer / denom;
 	r = numer - q * denom;
 
@@ -356,24 +351,6 @@ FloorDivMod(int numer, int denom, int *quo, int *rem)
 			q -= 1;
 			r += denom;
 		}
-	}
-
-	if ((numer < 0) ^ (denom < 0))
-	{
-		assert(q <= 0);
-	}
-	else
-	{
-		assert(q >= 0);
-	}
-
-	if (denom < 0)
-	{
-		assert(r > denom && r <= 0);
-	}
-	else
-	{
-		assert(r >= 0 && r < denom);
 	}
 #else
 	float num = numer, den = denom;
@@ -425,6 +402,13 @@ R_PolysetSetUpForLineScan(fixed8_t startvertu, fixed8_t startvertv,
 	FloorDivMod (tm, tn, &ubasestep, &erroradjustup);
 }
 
+static inline __attribute__((always_inline)) int
+R_PolysetCeilF(float x)
+{
+	int i = (int)x;
+	return i + ((float)i < x);
+}
+
 /*
 ================
 R_PolysetCalcGradients
@@ -435,12 +419,15 @@ R_PolysetCalcGradients (int skinwidth)
 {
 	float	xstepdenominv, ystepdenominv, t0, t1;
 	float	p01_minus_p21, p11_minus_p21, p00_minus_p20, p10_minus_p20;
-	int i;
+	const compactvert_t p0 = r_p0;
+	const compactvert_t p1 = r_p1;
+	const compactvert_t p2 = r_p2;
+	int	sstepx, sstepy, tstepx, tstepy;
 
-	p00_minus_p20 = r_p0.u - r_p2.u;
-	p01_minus_p21 = r_p0.v - r_p2.v;
-	p10_minus_p20 = r_p1.u - r_p2.u;
-	p11_minus_p21 = r_p1.v - r_p2.v;
+	p00_minus_p20 = p0.u - p2.u;
+	p01_minus_p21 = p0.v - p2.v;
+	p10_minus_p20 = p1.u - p2.u;
+	p11_minus_p21 = p1.v - p2.v;
 
 	xstepdenominv = 1.0 / (float)d_xdenom;
 
@@ -449,43 +436,64 @@ R_PolysetCalcGradients (int skinwidth)
 	// ceil () for light so positive steps are exaggerated, negative steps
 	// diminished,  pushing us away from underflow toward overflow. Underflow is
 	// very visible, overflow is very unlikely, because of ambient lighting
-	for (i=0; i<3; i++)
+	if (p0.l[0] == p0.l[1] && p0.l[0] == p0.l[2] &&
+	    p1.l[0] == p1.l[1] && p1.l[0] == p1.l[2] &&
+	    p2.l[0] == p2.l[1] && p2.l[0] == p2.l[2])
 	{
-		t0 = r_p0.l[i] - r_p2.l[i];
-		t1 = r_p1.l[i] - r_p2.l[i];
-		r_lstepx[i] = (int)
-				ceil((t1 * p01_minus_p21 - t0 * p11_minus_p21) * xstepdenominv);
-		r_lstepy[i] = (int)
-				ceil((t1 * p00_minus_p20 - t0 * p10_minus_p20) * ystepdenominv);
+		int lx, ly;
+		t0 = p0.l[0] - p2.l[0];
+		t1 = p1.l[0] - p2.l[0];
+		lx = R_PolysetCeilF((t1 * p01_minus_p21 - t0 * p11_minus_p21) * xstepdenominv);
+		ly = R_PolysetCeilF((t1 * p00_minus_p20 - t0 * p10_minus_p20) * ystepdenominv);
+		r_lstepx[0] = lx;
+		r_lstepx[1] = lx;
+		r_lstepx[2] = lx;
+		r_lstepy[0] = ly;
+		r_lstepy[1] = ly;
+		r_lstepy[2] = ly;
+	}
+	else
+	{
+		int i;
+		for (i=0; i<3; i++)
+		{
+			t0 = p0.l[i] - p2.l[i];
+			t1 = p1.l[i] - p2.l[i];
+			r_lstepx[i] = R_PolysetCeilF(
+					(t1 * p01_minus_p21 - t0 * p11_minus_p21) * xstepdenominv);
+			r_lstepy[i] = R_PolysetCeilF(
+					(t1 * p00_minus_p20 - t0 * p10_minus_p20) * ystepdenominv);
+		}
 	}
 
-	t0 = r_p0.s - r_p2.s;
-	t1 = r_p1.s - r_p2.s;
-	r_sstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
+	t0 = p0.s - p2.s;
+	t1 = p1.s - p2.s;
+	sstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			xstepdenominv);
-	r_sstepy = (int)((t1 * p00_minus_p20 - t0* p10_minus_p20) *
+	sstepy = (int)((t1 * p00_minus_p20 - t0* p10_minus_p20) *
 			ystepdenominv);
 
-	t0 = r_p0.t - r_p2.t;
-	t1 = r_p1.t - r_p2.t;
-	r_tstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
+	t0 = p0.t - p2.t;
+	t1 = p1.t - p2.t;
+	tstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			xstepdenominv);
-	r_tstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
+	tstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			ystepdenominv);
 
-	t0 = r_p0.zi - r_p2.zi;
-	t1 = r_p1.zi - r_p2.zi;
+	t0 = p0.zi - p2.zi;
+	t1 = p1.zi - p2.zi;
 	r_zistepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			xstepdenominv);
 	r_zistepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			ystepdenominv);
 
-	{
-		a_sstepxfrac = r_sstepx & 0xFFFF;
-		a_tstepxfrac = r_tstepx & 0xFFFF;
-	}
-
-	a_ststepxwhole = skinwidth * (r_tstepx >> SHIFT16XYZ) + (r_sstepx >> SHIFT16XYZ);
+	r_sstepx = sstepx;
+	r_sstepy = sstepy;
+	r_tstepx = tstepx;
+	r_tstepy = tstepy;
+	a_sstepxfrac = sstepx & 0xFFFF;
+	a_tstepxfrac = tstepx & 0xFFFF;
+	a_ststepxwhole = skinwidth * (tstepx >> SHIFT16XYZ) + (sstepx >> SHIFT16XYZ);
 }
 
 
@@ -770,76 +778,102 @@ static void
 R_ProcessLeftEdge(const compactvert_t *plefttop, const compactvert_t *prighttop,
 		const compactvert_t *pleftbottom)
 {
-	light3_t working_lstepx;
 	pixel_t	*d_ptex;
-	int u, v;
-	int s, t;
-	int height;
-	int i;
+	const int u = plefttop->u;
+	const int v = plefttop->v;
+	const int bot_u = pleftbottom->u;
+	const int bot_v = pleftbottom->v;
+	const int aspancount = u - prighttop->u;
+	const int skinwidth = r_affinetridesc.skinwidth;
+	int s = plefttop->s * r_affinetridesc.scalewidth;
+	int t = plefttop->t * r_affinetridesc.scaleheight;
+	const int sfrac = s & 0xFFFF;
+	const int tfrac = t & 0xFFFF;
+	const int l0 = plefttop->l[0], l1 = plefttop->l[1], l2 = plefttop->l[2];
+	const zvalue_t zi = plefttop->zi;
+	const int height = bot_v - v;
+	int basestep, bias;
+	int sstepx, sstepy, tstepx, tstepy;
+	int wl0, wl1, wl2, lb0, lb1, lb2;
+	zvalue_t zistepx, zibasestep;
 
-	u = plefttop->u;
-	v = plefttop->v;
-	d_aspancount = plefttop->u - prighttop->u;
+	d_ptex = &r_affinetridesc.pskin[(s >> SHIFT16XYZ) + (t >> SHIFT16XYZ) * skinwidth];
 
-	s = plefttop->s * r_affinetridesc.scalewidth;
-	t = plefttop->t * r_affinetridesc.scaleheight;
-	i = (s >> SHIFT16XYZ) + (t >> SHIFT16XYZ) * r_affinetridesc.skinwidth;
-	d_ptex = &r_affinetridesc.pskin[i];
-	d_sfrac = s & 0xFFFF;
-	d_tfrac = t & 0xFFFF;
-
-	memcpy(d_light, plefttop->l, sizeof(light3_t));
-	d_zi = plefttop->zi;
-
-	height = pleftbottom->v - plefttop->v;
 	if (height == 1)
 	{
-		// skip calculations needed for 2+ spans
-		R_PushEdgesSpan(u, v, d_aspancount,
-				d_ptex, d_sfrac, d_tfrac, d_light, d_zi);
+		spanpackage_t *pkg = d_pedgespanpackage;
+		pkg->u = u;
+		pkg->v = v;
+		pkg->count = aspancount;
+		pkg->ptex = d_ptex;
+		pkg->sfrac = sfrac;
+		pkg->tfrac = tfrac;
+		pkg->light[0] = l0;
+		pkg->light[1] = l1;
+		pkg->light[2] = l2;
+		pkg->zi = zi;
+		d_pedgespanpackage = pkg + 1;
+		d_aspancount = aspancount;
+		d_sfrac = sfrac;
+		d_tfrac = tfrac;
+		d_light[0] = l0;
+		d_light[1] = l1;
+		d_light[2] = l2;
+		d_zi = zi;
 		return;
 	}
-	R_PolysetSetUpForLineScan(plefttop->u, plefttop->v,
-				  pleftbottom->u, pleftbottom->v);
 
-	// for negative steps in x along left edge, bias toward overflow rather than
-	// underflow (sort of turning the floor () we did in the gradient calcs into
-	// ceil (), but plus a little bit)
-	t = ubasestep < 0;
-	for (i = 0; i < 3; i++)
-	{
-		working_lstepx[i] = r_lstepx[i] - t;
-	}
+	d_aspancount = aspancount;
+	d_sfrac = sfrac;
+	d_tfrac = tfrac;
+	d_light[0] = l0;
+	d_light[1] = l1;
+	d_light[2] = l2;
+	d_zi = zi;
+
+	R_PolysetSetUpForLineScan(u, v, bot_u, bot_v);
+
+	basestep = ubasestep;
+	bias = basestep < 0;
+	wl0 = r_lstepx[0] - bias;
+	wl1 = r_lstepx[1] - bias;
+	wl2 = r_lstepx[2] - bias;
+
+	sstepx = r_sstepx;
+	sstepy = r_sstepy;
+	tstepx = r_tstepx;
+	tstepy = r_tstepy;
+	zistepx = r_zistepx;
 
 	// base steps for drawers
-	s = r_sstepy + r_sstepx * ubasestep;
-	t = r_tstepy + r_tstepx * ubasestep;
-	d_ptexbasestep = (s >> SHIFT16XYZ) +
-			 (t >> SHIFT16XYZ) * r_affinetridesc.skinwidth;
+	s = sstepy + sstepx * basestep;
+	t = tstepy + tstepx * basestep;
+	d_ptexbasestep = (s >> SHIFT16XYZ) + (t >> SHIFT16XYZ) * skinwidth;
 	d_sfracbasestep = s & 0xFFFF;
 	d_tfracbasestep = t & 0xFFFF;
 
-	for (i = 0; i < 3; i++)
-	{
-		d_lightbasestep[i] = r_lstepy[i] + working_lstepx[i] * ubasestep;
-	}
+	lb0 = r_lstepy[0] + wl0 * basestep;
+	lb1 = r_lstepy[1] + wl1 * basestep;
+	lb2 = r_lstepy[2] + wl2 * basestep;
+	d_lightbasestep[0] = lb0;
+	d_lightbasestep[1] = lb1;
+	d_lightbasestep[2] = lb2;
 
-	d_zibasestep = r_zistepy + r_zistepx * ubasestep;
+	zibasestep = r_zistepy + zistepx * basestep;
+	d_zibasestep = zibasestep;
 
 	// extra steps for drawers
-	s += r_sstepx;
-	t += r_tstepx;
-	d_ptexextrastep = (s >> SHIFT16XYZ) +
-			  (t >> SHIFT16XYZ) * r_affinetridesc.skinwidth;
+	s += sstepx;
+	t += tstepx;
+	d_ptexextrastep = (s >> SHIFT16XYZ) + (t >> SHIFT16XYZ) * skinwidth;
 	d_sfracextrastep = s & 0xFFFF;
 	d_tfracextrastep = t & 0xFFFF;
 
-	for (i = 0; i < 3; i++)
-	{
-		d_lightextrastep[i] = d_lightbasestep[i] + working_lstepx[i];
-	}
+	d_lightextrastep[0] = lb0 + wl0;
+	d_lightextrastep[1] = lb1 + wl1;
+	d_lightextrastep[2] = lb2 + wl2;
 
-	d_ziextrastep = d_zibasestep + r_zistepx;
+	d_ziextrastep = zibasestep + zistepx;
 
 	R_PolysetScanLeftEdge_C(height, d_ptex, u, v);
 }

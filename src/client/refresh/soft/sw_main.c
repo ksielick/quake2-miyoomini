@@ -32,6 +32,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifdef MIYOO_MINI
 /* miyoo/platform/miyoo_sdl.c (the executable exports it) */
 int Miyoo_SetIndexedFrame(const uint8_t *idx, const uint32_t *pal, int w, int h);
+uint8_t *Miyoo_GetIndexedBuffers(int w, int h);
+static qboolean swap_buffers_mma = false;
 #endif
 
 #define NUMSTACKEDGES		2048
@@ -2088,8 +2090,14 @@ RE_ShutdownContext(void)
 {
 	if (swap_buffers)
 	{
-		free(swap_buffers);
+#ifdef MIYOO_MINI
+		if (!swap_buffers_mma)
+#endif
+			free(swap_buffers);
 	}
+#ifdef MIYOO_MINI
+	swap_buffers_mma = false;
+#endif
 
 	swap_buffers = NULL;
 	vid_buffer = NULL;
@@ -2512,10 +2520,15 @@ RE_EndFrame(void)
 		}
 
 		// search difference end
-		vmax = RE_BufferDifferenceEnd(vmin, vmax);
-		if (vmax > (vid_buffer_height * vid_buffer_width))
+#ifdef MIYOO_MINI
+		if (!(swap_buffers_mma && !texture_high_color))
+#endif
 		{
-			vmax = vid_buffer_height * vid_buffer_width;
+			vmax = RE_BufferDifferenceEnd(vmin, vmax);
+			if (vmax > (vid_buffer_height * vid_buffer_width))
+			{
+				vmax = vid_buffer_height * vid_buffer_width;
+			}
 		}
 	}
 
@@ -2627,7 +2640,18 @@ static void
 SWimp_CreateRender(int width, int height)
 {
 	swap_current = 0;
-	swap_buffers = malloc(height * width * sizeof(pixel_t) * 2);
+#ifdef MIYOO_MINI
+	swap_buffers_mma = false;
+	swap_buffers = Miyoo_GetIndexedBuffers(width, height);
+	if (swap_buffers)
+	{
+		swap_buffers_mma = true;
+	}
+	else
+#endif
+	{
+		swap_buffers = malloc(height * width * sizeof(pixel_t) * 2);
+	}
 	if (!swap_buffers)
 	{
 		Com_Error(ERR_FATAL, "%s: Can't allocate swapbuffer.", __func__);

@@ -378,6 +378,7 @@ typedef struct
 	affinetridesc_t skin;
 	void (*drawspans)(const entity_t *currententity, spanpackage_t *pspanpackage);
 	int blendcolor;
+	int xdenom;
 } sw_tricmd_t;
 
 static sw_tricmd_t *tris;
@@ -421,29 +422,32 @@ poly_replay(int part, void *arg)
 	sw_mt_replaying = 1;
 	if (triangle_spans)
 	{
-		for (i = 0; i < numtris; i++)
-		{
-			const sw_tricmd_t *t = &tris[i];
-			finalvert_t fv[3];
-			int vmin = t->v[0].v, vmax = t->v[0].v;
+		const int band_v0 = sw_band_v0;
+		const int band_v1 = sw_band_v1;
+		const int n = numtris;
+		const sw_tricmd_t *const l_tris = tris;
 
-			/* a triangle wholly outside this thread's rows: nothing to set up */
-			if (t->v[1].v < vmin) vmin = t->v[1].v;
-			if (t->v[1].v > vmax) vmax = t->v[1].v;
-			if (t->v[2].v < vmin) vmin = t->v[2].v;
-			if (t->v[2].v > vmax) vmax = t->v[2].v;
-			if (vmax < sw_band_v0 || vmin >= sw_band_v1)
+		for (i = 0; i < n; i++)
+		{
+			const sw_tricmd_t *t = &l_tris[i];
+			const int v0 = t->v[0].v, v1 = t->v[1].v, v2 = t->v[2].v;
+			int vmin = v0, vmax = v0;
+
+			/* a triangle wholly outside this thread's rows: nothing to set up
+			 * (row vmax itself is never drawn since height = bottom->v - top->v) */
+			if (v1 < vmin) vmin = v1;
+			if (v1 > vmax) vmax = v1;
+			if (v2 < vmin) vmin = v2;
+			if (v2 > vmax) vmax = v2;
+			if (vmax <= band_v0 || vmin >= band_v1)
 			{
 				continue;
 			}
 
-			fv[0].cv = t->v[0];
-			fv[1].cv = t->v[1];
-			fv[2].cv = t->v[2];
 			r_affinetridesc = t->skin;
 			d_pdrawspans = t->drawspans;
 			r_aliasblendcolor = t->blendcolor;
-			R_DrawTriangle(t->entity, &fv[0], &fv[1], &fv[2]);
+			R_DrawRecordedTriangle(t->entity, t->v, t->xdenom);
 		}
 	}
 	sw_mt_replaying = 0;
@@ -523,7 +527,7 @@ SW_MT_PolyEnd(void)
 
 qboolean
 SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t *b,
-	const finalvert_t *c)
+	const finalvert_t *c, int xdenom)
 {
 	sw_tricmd_t *t;
 
@@ -551,6 +555,7 @@ SW_MT_RecordTriangle(const entity_t *e, const finalvert_t *a, const finalvert_t 
 	t->skin = r_affinetridesc;
 	t->drawspans = d_pdrawspans;
 	t->blendcolor = r_aliasblendcolor;
+	t->xdenom = xdenom;
 	return true;
 }
 

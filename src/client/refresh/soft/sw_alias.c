@@ -264,67 +264,71 @@ R_AliasPreparePoints (const entity_t *currententity, finalvert_t *verts, const f
 	pstverts = (dstvert_t *)((byte *)s_pmdl + s_pmdl->ofs_st);
 	ptri = (dtriangle_t *)((byte *)s_pmdl + s_pmdl->ofs_tris);
 
-	if ( ( currententity->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) )
 	{
-		for (i=0 ; i<s_pmdl->num_tris ; i++, ptri++)
+		const int num_tris = s_pmdl->num_tris;
+
+		if ( ( currententity->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) )
 		{
-			pfv[0] = &verts[ptri->index_xyz[0]];
-			pfv[1] = &verts[ptri->index_xyz[1]];
-			pfv[2] = &verts[ptri->index_xyz[2]];
-
-			if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
-				continue;	// completely clipped
-
-			// insert s/t coordinates
-			pfv[0]->cv.s = pstverts[ptri->index_st[0]].s << SHIFT16XYZ;
-			pfv[0]->cv.t = pstverts[ptri->index_st[0]].t << SHIFT16XYZ;
-
-			pfv[1]->cv.s = pstverts[ptri->index_st[1]].s << SHIFT16XYZ;
-			pfv[1]->cv.t = pstverts[ptri->index_st[1]].t << SHIFT16XYZ;
-
-			pfv[2]->cv.s = pstverts[ptri->index_st[2]].s << SHIFT16XYZ;
-			pfv[2]->cv.t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
-
-			if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
+			for (i=0 ; i<num_tris ; i++, ptri++)
 			{
-				// totally unclipped
-				R_DrawTriangle(currententity, pfv[2], pfv[1], pfv[0]);
-			}
-			else
-			{
-				R_AliasClipTriangle(currententity, pfv[2], pfv[1], pfv[0]);
+				pfv[0] = &verts[ptri->index_xyz[0]];
+				pfv[1] = &verts[ptri->index_xyz[1]];
+				pfv[2] = &verts[ptri->index_xyz[2]];
+
+				if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
+					continue;	// completely clipped
+
+				// insert s/t coordinates
+				pfv[0]->cv.s = pstverts[ptri->index_st[0]].s << SHIFT16XYZ;
+				pfv[0]->cv.t = pstverts[ptri->index_st[0]].t << SHIFT16XYZ;
+
+				pfv[1]->cv.s = pstverts[ptri->index_st[1]].s << SHIFT16XYZ;
+				pfv[1]->cv.t = pstverts[ptri->index_st[1]].t << SHIFT16XYZ;
+
+				pfv[2]->cv.s = pstverts[ptri->index_st[2]].s << SHIFT16XYZ;
+				pfv[2]->cv.t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
+
+				if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
+				{
+					// totally unclipped
+					R_DrawTriangle(currententity, pfv[2], pfv[1], pfv[0]);
+				}
+				else
+				{
+					R_AliasClipTriangle(currententity, pfv[2], pfv[1], pfv[0]);
+				}
 			}
 		}
-	}
-	else
-	{
-		for (i=0 ; i<s_pmdl->num_tris ; i++, ptri++)
+		else
 		{
-			pfv[0] = &verts[ptri->index_xyz[0]];
-			pfv[1] = &verts[ptri->index_xyz[1]];
-			pfv[2] = &verts[ptri->index_xyz[2]];
-
-			if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
-				continue;	// completely clipped
-
-			// insert s/t coordinates
-			pfv[0]->cv.s = pstverts[ptri->index_st[0]].s << SHIFT16XYZ;
-			pfv[0]->cv.t = pstverts[ptri->index_st[0]].t << SHIFT16XYZ;
-
-			pfv[1]->cv.s = pstverts[ptri->index_st[1]].s << SHIFT16XYZ;
-			pfv[1]->cv.t = pstverts[ptri->index_st[1]].t << SHIFT16XYZ;
-
-			pfv[2]->cv.s = pstverts[ptri->index_st[2]].s << SHIFT16XYZ;
-			pfv[2]->cv.t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
-
-			if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
+			for (i=0 ; i<num_tris ; i++, ptri++)
 			{
-				// totally unclipped
-				R_DrawTriangle(currententity, pfv[0], pfv[1], pfv[2]);
-			}
-			else
-			{	// partially clipped
-				R_AliasClipTriangle(currententity, pfv[0], pfv[1], pfv[2]);
+				pfv[0] = &verts[ptri->index_xyz[0]];
+				pfv[1] = &verts[ptri->index_xyz[1]];
+				pfv[2] = &verts[ptri->index_xyz[2]];
+
+				if ( pfv[0]->flags & pfv[1]->flags & pfv[2]->flags )
+					continue;	// completely clipped
+
+				// insert s/t coordinates
+				pfv[0]->cv.s = pstverts[ptri->index_st[0]].s << SHIFT16XYZ;
+				pfv[0]->cv.t = pstverts[ptri->index_st[0]].t << SHIFT16XYZ;
+
+				pfv[1]->cv.s = pstverts[ptri->index_st[1]].s << SHIFT16XYZ;
+				pfv[1]->cv.t = pstverts[ptri->index_st[1]].t << SHIFT16XYZ;
+
+				pfv[2]->cv.s = pstverts[ptri->index_st[2]].s << SHIFT16XYZ;
+				pfv[2]->cv.t = pstverts[ptri->index_st[2]].t << SHIFT16XYZ;
+
+				if ( ! (pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) )
+				{
+					// totally unclipped
+					R_DrawTriangle(currententity, pfv[0], pfv[1], pfv[2]);
+				}
+				else
+				{	// partially clipped
+					R_AliasClipTriangle(currententity, pfv[0], pfv[1], pfv[2]);
+				}
 			}
 		}
 	}
@@ -411,16 +415,24 @@ R_AliasSetUpTransform(const entity_t *currententity)
 R_AliasTransformFinalVerts
 ================
 */
-static void
-R_AliasTransformFinalVerts(const entity_t *currententity, int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv )
+static __attribute__((noinline)) void
+R_AliasTransformFinalVerts(const entity_t * __restrict currententity, int numpoints,
+	finalvert_t * __restrict fv, dtrivertx_t * __restrict oldv, dtrivertx_t * __restrict newv)
 {
 	int i;
+	const qboolean grey_light = (r_ambientlight[0] == r_ambientlight[1] &&
+		r_ambientlight[0] == r_ambientlight[2] &&
+		r_shadelight[0] == r_shadelight[1] &&
+		r_shadelight[0] == r_shadelight[2]);
+	const qboolean has_shell = (currententity->flags &
+		(RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_SHELL_DOUBLE | RF_SHELL_HALF_DAM)) != 0;
 
 	for ( i = 0; i < numpoints; i++, fv++, oldv++, newv++ )
 	{
 		float	lightcos;
-		const float	*plightnormal;
-		vec3_t  lerped_vert;
+		const float	* __restrict plightnormal;
+		vec3_t	lerped_vert;
+		float	x, y, z;
 
 		lerped_vert[0] = r_lerp_move[0] + oldv->v[0]*r_lerp_backv[0] + newv->v[0]*r_lerp_frontv[0];
 		lerped_vert[1] = r_lerp_move[1] + oldv->v[1]*r_lerp_backv[1] + newv->v[1]*r_lerp_frontv[1];
@@ -429,52 +441,81 @@ R_AliasTransformFinalVerts(const entity_t *currententity, int numpoints, finalve
 		plightnormal = r_avertexnormals[newv->lightnormalindex];
 
 		// added double damage shell
-		if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_SHELL_DOUBLE | RF_SHELL_HALF_DAM) )
+		if ( has_shell )
 		{
 			lerped_vert[0] += plightnormal[0] * POWERSUIT_SCALE;
 			lerped_vert[1] += plightnormal[1] * POWERSUIT_SCALE;
 			lerped_vert[2] += plightnormal[2] * POWERSUIT_SCALE;
 		}
 
-		fv->xyz[0] = DotProduct(lerped_vert, aliastransform[0]) + aliastransform[0][3];
-		fv->xyz[1] = DotProduct(lerped_vert, aliastransform[1]) + aliastransform[1][3];
-		fv->xyz[2] = DotProduct(lerped_vert, aliastransform[2]) + aliastransform[2][3];
-
-		fv->flags = 0;
+		x = DotProduct(lerped_vert, aliastransform[0]) + aliastransform[0][3];
+		y = DotProduct(lerped_vert, aliastransform[1]) + aliastransform[1][3];
+		z = DotProduct(lerped_vert, aliastransform[2]) + aliastransform[2][3];
+		fv->xyz[0] = x;
+		fv->xyz[1] = y;
+		fv->xyz[2] = z;
 
 		// lighting
 		lightcos = DotProduct (plightnormal, r_plightvec);
 
 		if (lightcos < 0)
 		{
-			int		j;
-
-			for(j=0; j<3; j++)
+			if (grey_light)
 			{
-				int temp;
-
-				temp = r_ambientlight[j];
-
-				temp += (r_shadelight[j] * lightcos);
-
-				// clamp; because we limited the minimum ambient and shading light, we
-				// don't have to clamp low light, just bright
+				int temp = r_ambientlight[0];
+				temp += (r_shadelight[0] * lightcos);
 				if (temp < 0)
 					temp = 0;
-
-				fv->cv.l[j] = temp;
+				fv->cv.l[0] = temp;
+				fv->cv.l[1] = temp;
+				fv->cv.l[2] = temp;
+			}
+			else
+			{
+				int j;
+				for (j = 0; j < 3; j++)
+				{
+					int temp = r_ambientlight[j];
+					temp += (r_shadelight[j] * lightcos);
+					if (temp < 0)
+						temp = 0;
+					fv->cv.l[j] = temp;
+				}
 			}
 		}
 		else
-			memcpy(fv->cv.l, r_ambientlight, sizeof(light3_t));
-
-		if ( fv->xyz[2] < ALIAS_Z_CLIP_PLANE )
 		{
-			fv->flags |= ALIAS_Z_CLIP;
+			fv->cv.l[0] = r_ambientlight[0];
+			fv->cv.l[1] = r_ambientlight[1];
+			fv->cv.l[2] = r_ambientlight[2];
+		}
+
+		if ( z < ALIAS_Z_CLIP_PLANE )
+		{
+			fv->flags = ALIAS_Z_CLIP;
 		}
 		else
 		{
-			R_AliasProjectAndClipTestFinalVert( fv );
+			float zi = 1.0 / z;
+			int u, v, flags = 0;
+
+			fv->cv.zi = zi * s_ziscale;
+
+			u = (x * aliasxscale * zi) + aliasxcenter;
+			v = (y * aliasyscale * zi) + aliasycenter;
+			fv->cv.u = u;
+			fv->cv.v = v;
+
+			if (u < r_refdef.aliasvrect.x)
+				flags |= ALIAS_LEFT_CLIP;
+			if (v < r_refdef.aliasvrect.y)
+				flags |= ALIAS_TOP_CLIP;
+			if (u > r_refdef.aliasvrectright)
+				flags |= ALIAS_RIGHT_CLIP;
+			if (v > r_refdef.aliasvrectbottom)
+				flags |= ALIAS_BOTTOM_CLIP;
+
+			fv->flags = flags;
 		}
 	}
 
@@ -490,6 +531,11 @@ R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
 {
 	float	zi;
 	float	x, y, z;
+	int	u, v, flags = fv->flags;
+	const int clip_left = r_refdef.aliasvrect.x;
+	const int clip_top = r_refdef.aliasvrect.y;
+	const int clip_right = r_refdef.aliasvrectright;
+	const int clip_bottom = r_refdef.aliasvrectbottom;
 
 	// project points
 	x = fv->xyz[0];
@@ -499,17 +545,21 @@ R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
 
 	fv->cv.zi = zi * s_ziscale;
 
-	fv->cv.u = (x * aliasxscale * zi) + aliasxcenter;
-	fv->cv.v = (y * aliasyscale * zi) + aliasycenter;
+	u = (x * aliasxscale * zi) + aliasxcenter;
+	v = (y * aliasyscale * zi) + aliasycenter;
+	fv->cv.u = u;
+	fv->cv.v = v;
 
-	if (fv->cv.u < r_refdef.aliasvrect.x)
-		fv->flags |= ALIAS_LEFT_CLIP;
-	if (fv->cv.v < r_refdef.aliasvrect.y)
-		fv->flags |= ALIAS_TOP_CLIP;
-	if (fv->cv.u > r_refdef.aliasvrectright)
-		fv->flags |= ALIAS_RIGHT_CLIP;
-	if (fv->cv.v > r_refdef.aliasvrectbottom)
-		fv->flags |= ALIAS_BOTTOM_CLIP;
+	if (u < clip_left)
+		flags |= ALIAS_LEFT_CLIP;
+	if (v < clip_top)
+		flags |= ALIAS_TOP_CLIP;
+	if (u > clip_right)
+		flags |= ALIAS_RIGHT_CLIP;
+	if (v > clip_bottom)
+		flags |= ALIAS_BOTTOM_CLIP;
+
+	fv->flags = flags;
 }
 
 /*

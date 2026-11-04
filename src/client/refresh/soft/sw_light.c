@@ -250,13 +250,16 @@ R_AddDynamicLights (drawsurf_t* drawsurf)
 	int		lnum;
 	int		smax, tmax;
 	mtexinfo_t	*tex;
+	light_t		*const blights = blocklights;
+	const light_t	*const blight_max = blocklight_max;
+	const qboolean	grey = (r_colorlight->value == 0);
 
 	surf = drawsurf->surf;
 	smax = (surf->extents[0]>>4)+1;
 	tmax = (surf->extents[1]>>4)+1;
 	tex = surf->texinfo;
 
-	if (blocklight_max <= blocklights + smax*tmax*3)
+	if (blight_max <= blights + smax*tmax*3)
 	{
 		r_outoflights = true;
 		return;
@@ -270,7 +273,7 @@ R_AddDynamicLights (drawsurf_t* drawsurf)
 		int		i;
 		dlight_t	*dl;
 		int		negativeLight;
-		light_t *plightdest = blocklights;
+		light_t *plightdest = blights;
 
 		if (!(surf->dlightbits & (1<<lnum)))
 			continue;	// not lit by this light
@@ -278,7 +281,7 @@ R_AddDynamicLights (drawsurf_t* drawsurf)
 		dl = &r_newrefdef.dlights[lnum];
 		rad = dl->intensity;
 
-		if(r_colorlight->value == 0)
+		if (grey)
 		{
 			for(i=0; i<3; i++)
 				color[i] = 256;
@@ -337,24 +340,56 @@ R_AddDynamicLights (drawsurf_t* drawsurf)
 				else
 					dist = td + (sd>>1);
 
-				for (i=0; i<3; i++)
+				if (grey)
 				{
-					//====
-					if(!negativeLight)
+					if (dist < minlight)
 					{
-						if (dist < minlight)
-							*plightdest += (rad - dist) * color[i];
+						const float add = (rad - dist) * 256.0f;
+						light_t v = plightdest[0];
+						if (!negativeLight)
+						{
+							v += add;
+						}
+						else
+						{
+							v -= add;
+							if (v < minlight)
+								v = minlight;
+						}
+						plightdest[0] = v;
+						plightdest[1] = v;
+						plightdest[2] = v;
+					}
+					else if (negativeLight && plightdest[0] < minlight)
+					{
+						const light_t v = minlight;
+						plightdest[0] = v;
+						plightdest[1] = v;
+						plightdest[2] = v;
+					}
+					plightdest += 3;
+				}
+				else
+				{
+					for (i=0; i<3; i++)
+					{
+						//====
+						if(!negativeLight)
+						{
+							if (dist < minlight)
+								*plightdest += (rad - dist) * color[i];
 
+						}
+						else
+						{
+							if (dist < minlight)
+								*plightdest -= (rad - dist) * color[i];
+							if(*plightdest < minlight)
+								*plightdest = minlight;
+						}
+						//====
+						plightdest ++;
 					}
-					else
-					{
-						if (dist < minlight)
-							*plightdest -= (rad - dist) * color[i];
-						if(*plightdest < minlight)
-							*plightdest = minlight;
-					}
-					//====
-					plightdest ++;
 				}
 			}
 		}
@@ -375,6 +410,9 @@ R_BuildLightMap (drawsurf_t* drawsurf)
 	int			size;
 	byte		*lightmap;
 	msurface_t	*surf;
+	light_t		*const blights = blocklights;
+	const light_t	*const blight_max = blocklight_max;
+	const qboolean	grey = (r_colorlight->value == 0);
 
 	surf = drawsurf->surf;
 
@@ -382,23 +420,21 @@ R_BuildLightMap (drawsurf_t* drawsurf)
 	tmax = (surf->extents[1]>>4)+1;
 	size = smax*tmax*3;
 
-	if (blocklight_max <= blocklights + size)
+	if (blight_max <= blights + size)
 	{
 		r_outoflights = true;
 		return;
 	}
 
-	// clear to no light
-	memset(blocklights, 0, size * sizeof(light_t));
-
 	if (r_fullbright->value || !r_worldmodel->lightdata)
 	{
+		memset(blights, 0, size * sizeof(light_t));
 		return;
 	}
 
 	// add all the lightmaps
 	lightmap = surf->samples;
-	if (lightmap)
+	if (lightmap && surf->styles[0] != 255)
 	{
 		int maps;
 
@@ -408,47 +444,81 @@ R_BuildLightMap (drawsurf_t* drawsurf)
 			unsigned scale;
 			light_t  *curr_light, *max_light;
 
-			curr_light = blocklights;
-			max_light = blocklights + size;
+			curr_light = blights;
+			max_light = blights + size;
 
 			scale = drawsurf->lightadj[maps];	// 8.8 fraction
 
-			if(r_colorlight->value == 0)
+			if (grey)
 			{
-				do
+				if (maps == 0)
 				{
-					light_t light;
+					do
+					{
+						light_t light = lightmap[0];
+						if (light < lightmap[1])
+							light = lightmap[1];
+						if (light < lightmap[2])
+							light = lightmap[2];
 
-					light = lightmap[0];
-					if (light < lightmap[1])
-						light = lightmap[1];
-					if (light < lightmap[2])
-						light = lightmap[2];
+						light *= scale;
 
-					light *= scale;
-
-					*curr_light += light;
-					curr_light++;
-					*curr_light += light;
-					curr_light++;
-					*curr_light += light;
-					curr_light++;
-
-					lightmap += 3; /* skip to next lightmap */
+						curr_light[0] = light;
+						curr_light[1] = light;
+						curr_light[2] = light;
+						curr_light += 3;
+						lightmap += 3;
+					}
+					while (curr_light < max_light);
 				}
-				while(curr_light < max_light);
+				else
+				{
+					do
+					{
+						light_t light = lightmap[0];
+						if (light < lightmap[1])
+							light = lightmap[1];
+						if (light < lightmap[2])
+							light = lightmap[2];
+
+						light = curr_light[0] + light * scale;
+
+						curr_light[0] = light;
+						curr_light[1] = light;
+						curr_light[2] = light;
+						curr_light += 3;
+						lightmap += 3;
+					}
+					while (curr_light < max_light);
+				}
 			}
 			else
 			{
-				do
+				if (maps == 0)
 				{
-					*curr_light += *lightmap * scale;
-					curr_light++;
-					lightmap ++; /* skip to next lightmap */
+					do
+					{
+						*curr_light++ = *lightmap++ * scale;
+					}
+					while (curr_light < max_light);
 				}
-				while(curr_light < max_light);
+				else
+				{
+					do
+					{
+						*curr_light += *lightmap * scale;
+						curr_light++;
+						lightmap ++; /* skip to next lightmap */
+					}
+					while (curr_light < max_light);
+				}
 			}
 		}
+	}
+	else
+	{
+		// clear to no light
+		memset(blights, 0, size * sizeof(light_t));
 	}
 
 	// add all the dynamic lights
@@ -457,27 +527,46 @@ R_BuildLightMap (drawsurf_t* drawsurf)
 
 	// bound, invert, and shift
 	{
-		light_t  *curr_light, *max_light;
+		light_t  *curr_light = blights;
+		light_t  *const max_light = blights + size;
 
-		curr_light = blocklights;
-		max_light = blocklights + size;
-
-		do
+		if (grey)
 		{
-			int t;
+			do
+			{
+				int t = (int)curr_light[0];
 
-			t = (int)*curr_light;
+				if (t < 0)
+					t = 0;
+				t = (255*256 - t) >> (8 - VID_CBITS);
 
-			if (t < 0)
-				t = 0;
-			t = (255*256 - t) >> (8 - VID_CBITS);
+				if (t < (1 << 6))
+					t = (1 << 6);
 
-			if (t < (1 << 6))
-				t = (1 << 6);
-
-			*curr_light = t;
-			curr_light++;
+				curr_light[0] = t;
+				curr_light[1] = t;
+				curr_light[2] = t;
+				curr_light += 3;
+			}
+			while (curr_light < max_light);
 		}
-		while(curr_light < max_light);
+		else
+		{
+			do
+			{
+				int t = (int)*curr_light;
+
+				if (t < 0)
+					t = 0;
+				t = (255*256 - t) >> (8 - VID_CBITS);
+
+				if (t < (1 << 6))
+					t = (1 << 6);
+
+				*curr_light = t;
+				curr_light++;
+			}
+			while (curr_light < max_light);
+		}
 	}
 }

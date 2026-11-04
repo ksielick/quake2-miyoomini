@@ -819,3 +819,34 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   `r_gunfov 80`) pushed weapon models 8 units forward in view space, causing noticeable perspective
   distortion (especially on the railgun) on the Miyoo's 4:3 panel. Restored original 1997 id Software
   behavior via `sw_gunzposition 0` and `r_gunfov -1` in `sw_main.c` (C defaults), `yq2.cfg` and `launch.sh`.
+- **6. Branch `Argon`: zero-copy 8-bit MMA, async MI_GFX pan thread, serial & TLS hot-loop pass, and fresh PGO** (2026-11-04):
+  - **Zero-copy 8-bit MMA buffers & async MI_GFX blit on `PanThread`** (`miyoo_fb.c`, `miyoo_sdl.c`, `sw_main.c`):
+    - Allocated two 8-bit frame buffers (`w * h * 2` = 600 KB) directly in cached MMA memory (`MiyooFb_GetI8Buffers` / `Miyoo_GetIndexedBuffers`) and pointed `swap_frames[0..1]` (`vid_buffer`) at them, eliminating the 307,200-byte `memcpy` in `MiyooFb_PresentI8` and skipping the redundant `RE_BufferDifferenceEnd` scan in `RE_EndFrame` when `swap_buffers_mma && !texture_high_color`.
+    - Offloaded `mi.flush` + `mi.blit` + `mi.wait` onto `PanThread` (`s_panI8Virt` / `s_panI8Phys` / `s_panBlitBusy`) for frames `n > 1`, so the game thread returns from `MiyooFb_PresentI8` immediately after signaling `s_panCond`.
+  - **Surface cache & lightmap hot paths** (`sw_surf.c`, `sw_light.c`):
+    - Removed `SW_TLS` globals (`sourcetstep`, `prowdestbase`, `pbasesource`, `r_stepback`, `r_lightwidth`, `r_numvblocks`, `r_source`, `r_sourcemax`, `r_lightptr`) in `sw_surf.c`, keeping them in local registers across `R_DrawSurface`.
+    - Added a fast 1-channel grey-light block path in `R_DrawSurface` when the 4 block corners have grey light (`l[0] == l[1] && l[0] == l[2]`, 100 % of blocks under `sw_colorlight 0`), and split the cold 3-channel RGB block loop into `noinline` `R_DrawSurfaceBlockRGB` — stack references in `R_DrawSurface` dropped from **145 to 82 (-43 %)**.
+    - Cached `blocklights` / `blocklight_max` in local pointers in `R_BuildLightMap` and `R_AddDynamicLights`; skipped the initial `memset` in `R_BuildLightMap` when `lightmap` is present by writing `maps == 0` directly, and added 1-channel fast paths for `r_colorlight->value == 0`.
+  - **Alias models, triangle setup & multi-threaded replay** (`sw_polyset.c`, `sw_alias.c`, `sw_mt.c`):
+    - Enabled hardware integer division (`sdiv`, `__ARM_ARCH_EXT_IDIV__`) in `FloorDivMod` and removed the 4 debug `assert()` calls that prevented inlining; `FloorDivMod` now inlines directly into `R_PolysetSetUpForLineScan` as 2 `sdiv` instructions (verified 0 diffs across all `tm in [-640..640], tn in [1..480]`).
+    - Replaced `ceil@plt` calls in `R_PolysetCalcGradients` with inline `R_PolysetCeilF`, added a 1-channel grey-light gradient fast path, and cached `SW_TLS` variables in local registers in `R_PolysetCalcGradients` and `R_ProcessLeftEdge`.
+    - Stored `xdenom` in `sw_tricmd_t`, added `R_DrawRecordedTriangle`, and tightened band culling in `poly_replay` to `vmax <= band_v0 || vmin >= band_v1` (since row `vmax` itself is never drawn) — `poly_replay` shrank from **378 to 252 instructions (-33 %)** and stack references from **54 to 25 (-54 %)**.
+    - Marked `R_AliasTransformFinalVerts` `noinline` with `__restrict` pointers, inlined `R_AliasProjectAndClipTestFinalVert`, and added a 1-channel grey vertex light path (preserving C's exact `temp += (r_shadelight * lightcos)` float addition before truncation).
+  - **BSP edge emission & span generation** (`sw_edge.c`, `sw_rast.c`):
+    - Kept `surfaces`, `&surfaces[1]`, `span_p`, `current_iv`, `edge_tail_u_shift20`, `shift_size` and `fv` in locals across `R_GenerateSpans` and `R_GenerateSpansBackward` (**295 -> 253 instructions, -14 %**), and bounded the surface clear loop in `R_ScanEdges` to `s < surface` instead of `s < surf_max`.
+    - Replaced `ceil@plt` in `R_EmitEdge` with inline `R_FastCeilF` and cached globals in locals (**0 `@plt` calls vs 2, 0 stack refs vs 16**, preserving `eu = u * l_shift + l_shift - 1` float rounding).
+  - **Fresh PGO profile** (`miyoo/pgo/{client,ref_soft,game}/*.gcda`, 150 files collected on `demo1` + `demo2`):
+    - `ref_soft.so` shrank from 306 KB to **207 KB (-32 %)** and `quake2` from 782 KB to **605 KB (-23 %)**.
+  - **Pixel-exactness**: both `test_argon` (`-O3 + LTO`) and `test_argon_pgo` (`-O3 + LTO + PGO`) match `ref_s3c` (`test_s3c` with the 4:3 weapon config) **25/25 screenshots (100 %, 0 pixels differing)**.
+  - **Measured as in play (`VSYNC=1`, `+set vid_maxfps 60`, 59.67 Hz panel ceiling; A B C A B C, `build/frames_argon_pgo2/`) and at unconstrained timedemo speed (`VSYNC=0`, A B C A B C)**:
+
+    | Build | `demo1` play fps (`VSYNC=1`) | `demo2` play fps (`VSYNC=1`) | `demo1` p50 / p90 / p99 / max ms (`>50`) | `demo2` p50 / p90 / p99 / max ms (`>50`) | `demo1` raw fps (`VSYNC=0`) | `demo2` raw fps (`VSYNC=0`) |
+    |---|---|---|---|---|---|---|
+    | A: `s3c` (baseline) | 57.5 / 57.3 (**57.4**) | 54.5 / 54.6 (**54.6**) | 17.0 / 20.8 / 27.8 / 56.4 (3) | 17.9 / 22.4 / 28.8 / 33.4 (0) | 65.1 / 65.7 (**65.4**) | 58.7 / 58.6 (**58.7**) |
+    | B: `argon` (`-O3+LTO`) | 59.1 / 59.1 (**59.1**) | 56.6 / 57.3 (**57.0**) | 16.8 / 19.2 / 24.4 / 52.0 (3) | 17.0 / 20.8 / 26.9 / 42.2 (0) | 71.8 / 71.3 (**71.6**) | 64.9 / 64.5 (**64.7**) |
+    | C: `argon_pgo` (`PGO+LTO`) | **59.5 / 59.5 (59.5)** | **58.0 / 58.0 (58.0)** | **16.7 / 19.0 / 23.9 / 50.6 (1)** | **16.8 / 20.1 / 26.7 / 38.3 (0)** | **72.6 / 74.8 (73.7)** | **67.7 / 67.2 (67.5)** |
+
+  - **Summary of gains over `s3c`**:
+    - Unconstrained rendering speed (`VSYNC=0`): **+12.7 % on `demo1` (65.4 -> 73.7 fps)** and **+15.0 % on `demo2` (58.7 -> 67.5 fps)**.
+    - In-play frame rate (`VSYNC=1`, capped by the 59.67 Hz panel): **57.4 -> 59.5 fps on `demo1`** (99.7 % of the hardware refresh rate) and **54.6 -> 58.0 fps (+6.3 %) on `demo2`**, with median frame time (`p50`) locked to a single 16.76 ms panel refresh (`16.7 / 16.8 ms`) in both demos and `p99` reduced by **3.9 ms** on `demo1` (`27.8 -> 23.9 ms`) and **2.1 ms** on `demo2` (`28.8 -> 26.7 ms`).
+  - **Total speedup since initial port (`38.5 / 33.5 fps` at `-O2`)**: **+55 % / +73 % as in play** (`59.5 / 58.0 fps`, vsync-limited) and **+91 % / +101 % raw rendering speed** (`73.7 / 67.5 fps`), 100 % pixel-identical.
