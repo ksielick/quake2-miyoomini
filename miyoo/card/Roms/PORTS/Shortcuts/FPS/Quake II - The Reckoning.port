@@ -14,3 +14,4 @@ Arguments="+set game xatrix"
 
 cd "/mnt/SDCARD/Roms/PORTS/Games/$GameDir"
 /mnt/SDCARD/Emu/PORTS/launch_standalone.sh "$GameName" "$GameDir" "$GameExecutable" "$Arguments" "$GameDataFile" "$KillAudioserver" "$PerformanceMode"
+

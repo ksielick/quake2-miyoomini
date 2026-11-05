@@ -823,6 +823,53 @@ IN_VirtualKeyEvent(int keynum, qboolean *state_store, qboolean new_state)
 	}
 }
 
+/* L2+R2 combo centers view and suppresses individual trigger look up/down */
+static void
+IN_TriggerEvent(int keynum, qboolean *this_trig, qboolean other_trig, qboolean new_state)
+{
+	static qboolean trigger_combo = false;
+
+	if (new_state == *this_trig)
+	{
+		return;
+	}
+
+	*this_trig = new_state;
+
+	if (*this_trig && other_trig)
+	{
+		trigger_combo = true;
+		if (keydown[K_TRIG_LEFT])
+			Key_Event(K_TRIG_LEFT, false, true);
+		if (keydown[K_TRIG_LEFT_ALT])
+			Key_Event(K_TRIG_LEFT_ALT, false, true);
+		if (keydown[K_TRIG_RIGHT])
+			Key_Event(K_TRIG_RIGHT, false, true);
+		if (keydown[K_TRIG_RIGHT_ALT])
+			Key_Event(K_TRIG_RIGHT_ALT, false, true);
+		if (cls.key_dest == key_game)
+			IN_CenterView();
+	}
+	else if (!*this_trig)
+	{
+		if (trigger_combo)
+		{
+			if (!other_trig)
+			{
+				trigger_combo = false;
+			}
+		}
+		else
+		{
+			Key_Event(keynum, false, true);
+		}
+	}
+	else if (!trigger_combo)
+	{
+		Key_Event(keynum, true, true);
+	}
+}
+
 qboolean IN_NumpadIsOn()
 {
     SDL_Keymod mod = SDL_GetModState();
@@ -1072,11 +1119,11 @@ IN_Update(void)
 				switch (event.caxis.axis)
 				{
 					case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
-						IN_VirtualKeyEvent(K_TRIG_LEFT, &left_trigger, axis_value > trig_thresh);
+						IN_TriggerEvent(K_TRIG_LEFT, &left_trigger, right_trigger, axis_value > trig_thresh);
 						break;
 
 					case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
-						IN_VirtualKeyEvent(K_TRIG_RIGHT, &right_trigger, axis_value > trig_thresh);
+						IN_TriggerEvent(K_TRIG_RIGHT, &right_trigger, left_trigger, axis_value > trig_thresh);
 						break;
 				}
 

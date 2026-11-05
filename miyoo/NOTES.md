@@ -885,5 +885,7 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - **Port shortcuts & icons**: Added dedicated `.port` shortcuts (`Quake II - The Reckoning.port`, `Quake II - Ground Zero.port`) in `Roms/PORTS/Shortcuts/FPS/` and created high-quality 250x360 cover art icons for all three titles in `Roms/PORTS/Imgs/` and next to each shortcut.
   - **Launcher enhancements**: Extended `launch.sh` with automatic directory lower-casing and missing `.pak` file error reporting for each expansion pack.
   - **Standalone release packaging**: Created `miyoo/tools/package_release.sh` producing clean `dist/Quake2-Miyoo-v1.0.0.zip` (1.9 MB) and debug symbols `dist/Quake2-Symbols-v1.0.0.zip` (1.3 MB) ready for 100 % stock OnionOS.
-
-
+- **8. FPS counter integer rounding & L2+R2 view centering combo** (2026-11-05):
+  - **Integer FPS rounding (`src/client/cl_screen.c`)**: replaced `"%3.2ffps"` with `"%d fps"` (with `+ 0.5` mathematical rounding to nearest integer) for `cl_showfps 1`. Eliminates rapidly fluctuating decimal jitter on the small 3.5" display, providing clean, stable readings (`60 fps`, `92 fps`, `103 fps`).
+  - **L2+R2 view centering (`src/client/input/sdl2.c`)**: implemented `IN_TriggerEvent` tracking both trigger states (`SDL_CONTROLLER_AXIS_TRIGGERLEFT` and `SDL_CONTROLLER_AXIS_TRIGGERRIGHT`). When both are held, it cancels active `+lookup` / `+lookdown` key states, executes `IN_CenterView()` to level pitch back to the horizon, and prevents accidental pitch inputs until both triggers are released.
+  - **Binaries & Packaging**: Recompiled `build/miyoo_pgo/quake2` and updated standalone release `dist/Quake2-Miyoo-v1.0.0.zip`.

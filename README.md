@@ -28,7 +28,7 @@ below).
 | **X** | crouch (in water: swim down) | delete |
 | **A** | next weapon | confirm |
 | **L1 / R1** | strafe left / right | change the setting |
-| **L2 / R2** | look up / down | |
+| **L2 / R2** | look up / down (L2+R2: center view) | |
 | **START** | menu (pause) | close the menu |
 | **MENU** | menu (pause); Onion's Game Switcher later | |
 
