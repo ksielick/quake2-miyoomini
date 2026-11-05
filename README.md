@@ -5,9 +5,8 @@ screen's full **640x480**, tuned for smooth 60 fps gameplay. It is
 [Yamagi Quake II](https://github.com/yquake2/yquake2) with its software renderer, made to run
 straight on the console (no RetroArch), and started from Onion's **Ports** list.
 
-**Work in progress.** It plays, with sound, but there is no release zip yet. It will come with
-[Port Manager](https://github.com/ksielick/portmanager-miyoo). Speed work is going on (see
-below).
+**Ready to play.** Standalone release `v1.0.0` is available in `dist/Quake2-Miyoo-v1.0.0.zip`
+(clean drop-in for stock OnionOS, fully compatible with [Port Manager](https://github.com/ksielick/portmanager-miyoo)).
 
 - **640x480 locked at 60 fps**: plays at the hardware panel's refresh rate (59.67 Hz) with
   even frame pacing. 30 fps and "unlimited" (100+ fps) are in the video menu.
@@ -72,10 +71,10 @@ right, it is off in deathmatch, and it never aims at other players.
 ## Install
 
 1. Unpack the release zip (`dist/Quake2-Miyoo-v1.0.0.zip`) to the root of your SD card (`/mnt/SDCARD/`).
-2. Copy your `pak` files (from GOG or Steam):
-   - **Base Quake II**: copy `pak0.pak` (and `pak1.pak`, `pak2.pak`) into `Roms/PORTS/Games/Quake2/baseq2/`.
-   - **The Reckoning (Xatrix)**: copy `pak0.pak` into `Roms/PORTS/Games/Quake2/xatrix/`.
-   - **Ground Zero (Rogue)**: copy `pak0.pak` into `Roms/PORTS/Games/Quake2/rogue/`.
+2. Copy your game data (from GOG or Steam):
+   - **Base Quake II**: copy `pak0.pak` (and `pak1.pak`, `pak2.pak`) into `Roms/PORTS/Games/Quake2/baseq2/`. Optional: copy cutscenes (`video/*.cin`) to `baseq2/video/`.
+   - **The Reckoning (Xatrix)**: copy `pak0.pak` (and optional `video/*.cin`) into `Roms/PORTS/Games/Quake2/xatrix/`.
+   - **Ground Zero (Rogue)**: copy `pak0.pak` (and optional `video/*.cin`) into `Roms/PORTS/Games/Quake2/rogue/`.
    (Upper or lower case doesn't matter; the launcher automatically normalizes names).
 3. Music (optional): copy the GOG version's `music` folder (`Track02.ogg` ...) next to `baseq2`,
    or into `baseq2/music/`. It is decoded on the second CPU core, so it costs the game no speed.
