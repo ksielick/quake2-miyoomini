@@ -378,8 +378,8 @@ Qcommon_Init(int argc, char **argv)
 	cl_timedemo = Cvar_Get("timedemo", "0", 0);
 	dedicated = Cvar_Get("dedicated", "0", CVAR_NOSET);
 #ifdef MIYOO_MINI
-	/* (half the panel's refresh: every frame shown equally long, cooler, longer battery) */
-	vid_maxfps = Cvar_Get("vid_maxfps", "30", CVAR_ARCHIVE);
+	/* panel native refresh 60 fps (59.67 Hz) default */
+	vid_maxfps = Cvar_Get("vid_maxfps", "60", CVAR_ARCHIVE);
 #else
 	vid_maxfps = Cvar_Get("vid_maxfps", "300", CVAR_ARCHIVE);
 #endif

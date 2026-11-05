@@ -858,7 +858,7 @@ VID_MenuInit(void)
 	{
 		static const char *maxfps_names[] = { "30", "60", "unlimited", NULL };
 		static const char *showfps_names[] = { "no", "yes", "detailed", NULL };
-		cvar_t *maxfps = Cvar_Get("vid_maxfps", "30", CVAR_ARCHIVE);
+		cvar_t *maxfps = Cvar_Get("vid_maxfps", "60", CVAR_ARCHIVE);
 		cvar_t *showfps = Cvar_Get("cl_showfps", "0", CVAR_ARCHIVE);
 
 		/* (in the vertical sync item's place) */

@@ -893,3 +893,6 @@ Estimate for all: 1.6-1.8x, demo1 near 60 fps. An estimate, to be measured step 
   - **Cover art correction**: Replaced accidental LaunchBox placeholder images with official, authentic 250x360 box art covers sourced from Steam CDN (`Quake II.png`, `Quake II - The Reckoning.png`, `Quake II - Ground Zero.png`) in `Roms/PORTS/Shortcuts/FPS/` and `Roms/PORTS/Imgs/`.
   - **Game data deployment**: Deployed full mission pack assets (`xatrix/pak0.pak` [MD5 `f5e7b04f7d6b9530c59c5e1daa873b51`], `rogue/pak0.pak` [MD5 `5e2ecbe9287152a1e6e0d77b3f47dcb2`]), and full cutscene video directories (`video/*.cin`) for base game (`baseq2/video`, 160 MB), *The Reckoning* (`xatrix/video`, 70 MB), and *Ground Zero* (`rogue/video`, 110 MB).
   - **Standalone release**: Refreshed `dist/Quake2-Miyoo-v1.0.0.zip` ready for stock OnionOS.
+- **10. Default max FPS changed to 60 fps** (2026-11-05):
+  - **Default `vid_maxfps`**: Changed default from 30 to 60 fps in `src/common/frame.c` (`Qcommon_Init`) and `src/client/menu/videomenu.c` (`VID_MenuInit`), and added `set vid_maxfps 60` to all `yq2.cfg` defaults. With Argon optimizations and 1600 MHz clock, the hardware panel ceiling of 59.67 Hz is saturated with 0 drops, making 60 fps the natural out-of-the-box default.
+  - **Documentation**: Updated `README.md` and release packaging.

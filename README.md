@@ -51,7 +51,7 @@ brings this layout back.
 
 In Quake II's own menu (START):
 
-- *Options → Video*: **max fps** (30 / 60 / unlimited; 30 by default), **show fps** (the
+- *Options → Video*: **max fps** (30 / 60 / unlimited; 60 by default), **show fps** (the
   counter at the top right), brightness, field of view, ui scale, texture filter. Each
   applies at once.
 - *Options*: volumes and music, **sound filter**, always run, **auto aim** (on by default),
