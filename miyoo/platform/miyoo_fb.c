@@ -477,6 +477,15 @@ static double CpuMs(void)
 
 static void Stats(double copyMs)
 {
+	static int s_stats = -1;
+	if (s_stats < 0)
+	{
+		const char *e = getenv("MIYOO_STATS");
+		s_stats = (e && *e == '1') ? 1 : 0;
+	}
+	if (!s_stats)
+		return;
+
 	static double t0, c0, copySum;
 	static int frames;
 	if (!frames && !t0)

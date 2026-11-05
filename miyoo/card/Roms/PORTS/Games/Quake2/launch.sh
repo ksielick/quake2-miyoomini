@@ -7,6 +7,15 @@
 DIR=$(cd "$(dirname "$0")" && pwd)
 cd "$DIR" || exit 1
 
+# Clean macOS metadata files (._* and .DS_Store) which break Quake II pak scanning
+clean_mac_files () {
+	find "$1" -name "._*" -type f -delete 2>/dev/null
+	find "$1" -name ".DS_Store" -type f -delete 2>/dev/null
+}
+[ -d baseq2 ] && clean_mac_files baseq2
+[ -d xatrix ] && clean_mac_files xatrix
+[ -d rogue ] && clean_mac_files rogue
+
 # The game looks for lower case names (baseq2/pak0.pak); files copied from a PC may come in
 # upper or mixed case: renamed through a temporary name (FAT may not tell the cases apart).
 lower_names () {
@@ -59,9 +68,22 @@ if [ -f playlog.on ]; then
 	export MIYOO_FRAMES="$DIR/playlog/frames-$(date +%Y%m%d-%H%M%S).txt"
 fi
 
+# Detect screen resolution: default to native 640x480 for Miyoo Mini / Mini Plus;
+# automatically adapt to native 752x560 on the Miyoo Mini Flip (RedOnion/Onion) and Miyoo Mini v4
+RES_W=640
+RES_H=480
+
+DEV_MODEL=$(cat /tmp/deviceModel 2>/dev/null)
+FB_H=$(fbset 2>/dev/null | awk '/geometry/ {print $3}')
+
+if [ "$DEV_MODEL" = "285" ] || [ "$FB_H" = "560" ]; then
+	RES_W=752
+	RES_H=560
+fi
+
 chmod +x ./quake2 2>/dev/null
-# the software renderer at the panel's 640x480; sound at audioserver's 48 kHz
+# the software renderer at the panel's resolution ($RES_Wx$RES_H); sound at audioserver's 48 kHz
 # sw_gunzposition 0 and r_gunfov -1: original 4:3 weapon position without widescreen offsets
 # (exec: Onion's SIGTERM at power-off reaches the game itself)
-exec ./quake2 +set vid_renderer soft +set r_mode -1 +set r_customwidth 640 +set r_customheight 480 \
+exec ./quake2 +set vid_renderer soft +set r_mode -1 +set r_customwidth "$RES_W" +set r_customheight "$RES_H" \
 	+set vid_fullscreen 0 +set s_khz 48 +set sw_gunzposition 0 +set r_gunfov -1 "$@" > log.txt 2>&1
