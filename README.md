@@ -27,7 +27,8 @@ straight on the console (no RetroArch), and started from Onion's **Ports** list.
 | **X** | crouch (in water: swim down) | delete |
 | **A** | next weapon | confirm |
 | **L1 / R1** | strafe left / right | change the setting |
-| **L2 / R2** | look up / down (L2+R2: center view) | |
+| **L2 / R2** | look up / down | |
+| **L2 + R2** | **center view** (level horizon) | |
 | **START** | menu (pause) | close the menu |
 | **MENU** | menu (pause); Onion's Game Switcher later | |
 
@@ -41,7 +42,7 @@ straight on the console (no RetroArch), and started from Onion's **Ports** list.
 | **A** | previous weapon |
 | **B** | help computer: your mission objectives (the scores in deathmatch) |
 | **X** | walk / run (you run by default) |
-| Y, L1, R1, L2, R2 | as without SELECT: fire, strafe and look still work |
+| Y, L1, R1, L2, R2 | as without SELECT: fire, strafe and look still work (L2+R2 centers view) |
 
 The buttons can be changed in *Options → customize gamepad*; *Options → reset defaults*
 brings this layout back.

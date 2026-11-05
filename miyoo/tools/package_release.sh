@@ -80,6 +80,7 @@ X              : Crouch (Swim down)
 A              : Next weapon
 L1 / R1        : Strafe left / right
 L2 / R2        : Look up / down
+L2 + R2        : Center view (level horizon)
 START / MENU   : Menu (Pause)
 
 With SELECT held:
