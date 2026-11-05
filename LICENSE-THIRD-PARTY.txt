@@ -1,0 +1,294 @@
+Yamagi Quake II contains software developed by multiple individuals,
+projects and organisations. Following is a list of this software and
+copys of each license:
+
+- Quake II
+- Info-ZIP
+- zlib
+- Cocoa SDL entry points
+- stb_image.h, stb_image_write.h, stb_image_resize.h, stb_vorbis.h
+- miniz
+- GLAD
+
+Parts of other Quake II Clients were included into the source. They're
+covered by the same GPLv2 license as Quake II itself:
+
+- Hecatomb
+- Icculus Quake 2
+- KMQuake2
+- Q2Pro
+- QuDoS
+- r1q2
+- stereo quake
+- zeq2
+
+The following code is used in library form and thus not part of Yamagi
+Quake II:
+
+- cURL
+- libGL
+- libopenal
+- SDL
+
+
+===============================================================================
+
+This is version 2009-Jan-02 of the Info-ZIP license.
+The definitive version of this document should be available at
+ftp://ftp.info-zip.org/pub/infozip/license.html indefinitely and
+a copy at http://www.info-zip.org/pub/infozip/license.html.
+
+
+Copyright (c) 1990-2010 Info-ZIP.  All rights reserved.
+
+For the purposes of this copyright and license, "Info-ZIP" is defined as
+the following set of individuals:
+
+   Mark Adler, John Bush, Karl Davis, Harald Denker, Jean-Michel Dubois,
+   Jean-loup Gailly, Hunter Goatley, Ed Gordon, Ian Gorman, Chris Herborth,
+   Dirk Haase, Greg Hartwig, Robert Heath, Jonathan Hudson, Paul Kienitz,
+   David Kirschbaum, Johnny Lee, Onno van der Linden, Igor Mandrichenko,
+   Steve P. Miller, Sergio Monesi, Keith Owens, George Petrov, Greg Roelofs,
+   Kai Uwe Rommel, Steve Salisbury, Dave Smith, Steven M. Schweda,
+   Christian Spieler, Cosmin Truta, Antoine Verheijen, Paul von Behren,
+   Rich Wales, Mike White.
+
+This software is provided "as is," without warranty of any kind, express
+or implied.  In no event shall Info-ZIP or its contributors be held liable
+for any direct, indirect, incidental, special or consequential damages
+arising out of the use of or inability to use this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the above disclaimer and the following restrictions:
+
+    1. Redistributions of source code (in whole or in part) must retain
+       the above copyright notice, definition, disclaimer, and this list
+       of conditions.
+
+    2. Redistributions in binary form (compiled executables and libraries)
+       must reproduce the above copyright notice, definition, disclaimer,
+       and this list of conditions in documentation and/or other materials
+       provided with the distribution.  Additional documentation is not needed
+       for executables where a command line license option provides these and
+       a note regarding this option is in the executable's startup banner.  The
+       sole exception to this condition is redistribution of a standard
+       UnZipSFX binary (including SFXWiz) as part of a self-extracting archive;
+       that is permitted without inclusion of this license, as long as the
+       normal SFX banner has not been removed from the binary or disabled.
+
+    3. Altered versions--including, but not limited to, ports to new operating
+       systems, existing ports with new graphical interfaces, versions with
+       modified or added functionality, and dynamic, shared, or static library
+       versions not from Info-ZIP--must be plainly marked as such and must not
+       be misrepresented as being the original source or, if binaries,
+       compiled from the original source.  Such altered versions also must not
+       be misrepresented as being Info-ZIP releases--including, but not
+       limited to, labeling of the altered versions with the names "Info-ZIP"
+       (or any variation thereof, including, but not limited to, different
+       capitalizations), "Pocket UnZip," "WiZ" or "MacZip" without the
+       explicit permission of Info-ZIP.  Such altered versions are further
+       prohibited from misrepresentative use of the Zip-Bugs or Info-ZIP
+       e-mail addresses or the Info-ZIP URL(s), such as to imply Info-ZIP
+       will provide support for the altered versions.
+
+    4. Info-ZIP retains the right to use the names "Info-ZIP," "Zip," "UnZip,"
+       "UnZipSFX," "WiZ," "Pocket UnZip," "Pocket Zip," and "MacZip" for its
+       own source and binary releases.
+
+===============================================================================
+
+Copyright notice:
+
+ (C) 1995-2024 Jean-loup Gailly and Mark Adler
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+  Jean-loup Gailly        Mark Adler
+  jloup@gzip.org          madler@alumni.caltech.edu
+
+===============================================================================
+
+Main entry point for our Cocoa-ized SDL app
+Initial Version: Darrell Walisser <dwaliss1@purdue.edu>
+Non-NIB-Code & other changes: Max Horn <max@quendi.de>
+
+Feel free to customize this file to suit your needs
+
+===============================================================================
+
+ stb single-file public domain libraries
+ (stb_image.h, stb_image_resize.h, stb_image_write.h, stb_vorbis.h)
+ https://github.com/nothings/stb/
+ Dual-Licensed: Public Domain (Unlicense) or MIT License:
+ 
+This software is available under 2 licenses -- choose whichever you prefer.
+------------------------------------------------------------------------------
+ALTERNATIVE A - MIT License
+Copyright (c) 2017 Sean Barrett
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+------------------------------------------------------------------------------
+ALTERNATIVE B - Public Domain (www.unlicense.org)
+This is free and unencumbered software released into the public domain.
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
+software, either in source code form or as a compiled binary, for any purpose,
+commercial or non-commercial, and by any means.
+In jurisdictions that recognize copyright laws, the author or authors of this
+software dedicate any and all copyright interest in the software to the public
+domain. We make this dedication for the benefit of the public at large and to
+the detriment of our heirs and successors. We intend this dedication to be an
+overt act of relinquishment in perpetuity of all present and future rights to
+this software under copyright law.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===============================================================================
+
+Copyright 2013-2014 RAD Game Tools and Valve Software
+Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+===============================================================================
+
+The glad source code:
+
+    The MIT License (MIT)
+
+    Copyright (c) 2013-2022 David Herberth
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of
+    this software and associated documentation files (the "Software"), to deal in
+    the Software without restriction, including without limitation the rights to
+    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+    the Software, and to permit persons to whom the Software is furnished to do so,
+    subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+    FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+    COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+    IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+    CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+The Khronos Specifications:
+
+    Copyright (c) 2013-2020 The Khronos Group Inc.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+The EGL Specification and various headers:
+
+    Copyright (c) 2007-2016 The Khronos Group Inc.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and/or associated documentation files (the
+    "Materials"), to deal in the Materials without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Materials, and to
+    permit persons to whom the Materials are furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Materials.
+
+    THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+===============================================================================
+
+Gyro source code (gyro.c, gyro.h):
+
+    Copyright (c) 2018-2021 Julian "Jibb" Smart
+    Copyright (c) 2021-2024 Nicolas Lessard
+    Copyright (c) 2025 ceski
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===============================================================================

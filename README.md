@@ -98,5 +98,6 @@ Over **+140 % to +150 % raw speedup**, with the picture pixel for pixel the same
 
 Quake II is by id Software. [Yamagi Quake II](https://github.com/yquake2/yquake2) is by the
 Yamagi Quake II team (its own README: [README.yamagi.md](README.yamagi.md)). This port builds
-on their work and is GPL v2 like it (see [LICENSE](LICENSE)). Quake II's game data is not
+on their work and is GPL v2 like it (see [LICENSE](LICENSE); third-party library licenses are
+in [LICENSE-THIRD-PARTY.txt](LICENSE-THIRD-PARTY.txt)). Quake II's game data is not
 included.
