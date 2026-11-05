@@ -109,7 +109,7 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
 - **Busybox gotchas**:
   - `timeout -t`; no `time`; no `date +%N` (time with `/proc/uptime`).
   - Core dumps go to `|/etc/core.sh`.
-  - Binary output through `mssh` gets corrupted: fetch files over SMB (`\\192.168.0.246\Roms`).
+  - Binary output through `mssh` gets corrupted: fetch files over SMB (`\\<miyoo-ip>\Roms`).
 - The idle "Sleep timer" is off on the owner's device. It runs on battery: check the battery
   (`/customer/app/axp_test`) before and after long tests.
 
@@ -165,7 +165,7 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
     timedemo is deterministic.
   - The reference set: `build/shots/ref/` (SHOTS=50: demo1 13 shots, demo2 12), from the build
     of commit 7d2f229a (CPU present). Fetch new sets over SMB from
-    `\\192.168.0.246\Roms\PORTS\Games\Quake2\shots\<name>`.
+    `\\<miyoo-ip>\Roms\PORTS\Games\Quake2\shots\<name>`.
 - **2026-11-01, step 4: present through MI_GFX** (tqrun's code in `miyoo_fb.c`). The texture
   (`SDL_CreateTexture`) lives in MMA memory (`MiyooFb_AllocFrame`); `SDL_RenderPresent` flushes
   the cache and blits it, mirrored both ways, into the page not shown; CPU copy as fallback

@@ -1,6 +1,6 @@
 # quake2-miyoomini
 
-Yamagi Quake II for the Miyoo Mini Plus (OnionOS). Private repo ksielick/quake2-miyoomini.
+Yamagi Quake II for the Miyoo Mini Plus (OnionOS). Repo ksielick/quake2-miyoomini.
 Upstream: github.com/yquake2/yquake2 (remote `upstream`); our work is on branch `miyoo`.
 Commit as 153522713+ksielick@users.noreply.github.com (already set in the repo config).
 
@@ -10,7 +10,7 @@ updated after each step.
 - The owner's rules: Onion's Ports list only (never `App/`); no game data in the repo or
   releases (the player copies their own `baseq2/`); a PC backup before changing the card.
 - Shared tools: `G:\Emulacja\tools-miyoo` (private repo ksielick/tools-miyoo):
-  - `device/` holds `mssh`, `mscp` and `mshot.sh` (SMB share `\\192.168.0.246\Roms`).
+  - `device/` holds `mssh`, `mscp` and `mshot.sh` (SMB share `\\<miyoo-ip>\Roms`).
   - `analysis/` holds `shots_compare.py`, `frametimes.py` and `prof_map.py`.
   - The game's own scripts (bench.sh, bench_ab.sh, q2step_*.sh) stay in `miyoo/tools/`.
 - Toolchain:
