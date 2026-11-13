@@ -274,7 +274,7 @@ by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD 
 Rule: don't write a Miyoo piece from scratch when another port has a tested one. Copy it (with
 a comment naming where it came from), adapt it, and note here what changed. When the same piece
 ends up in three projects, that's the time to move it into a shared library, not before.
-The shared device facts and tools are in the `miyoo` skill and `G:\Emulacja\miyoo.md`.
+The shared device facts and tools are in the `handheld-ports` skill (its `notes/` folder is the former `G:\Emulacja\miyoo.md`).
 
 Paths below: RR2 = `G:\Emulacja\redriver2-miyoo\repos\REDRIVER2`, SCR =
 `G:\Emulacja\stuntcarremake-miyoo\repos\stuntcarremake`, TQ =
