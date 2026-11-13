@@ -6,6 +6,18 @@ their own `baseq2/` (the demo's `pak0.pak` works for testing). It should be inst
 by Port Manager (ksielick/portmanager-miyoo): a release zip that mirrors the SD card
 (`Roms/PORTS/Games/Quake2/`, a shortcut in `Roms/PORTS/Shortcuts/FPS/`), no game data inside.
 
+## Handoff
+
+The agent that ends a session rewrites this section (rules: the `handheld-ports` skill,
+"Working alongside the other agent").
+
+- Updated: 2026-11-13, claude (rule files and shared skill reorganised; no code changed)
+- Branch: `Argon`, this session's commits are pushed
+- In progress: nothing recorded
+- Uncommitted files left in the working tree: none
+- Review wanted: none
+- Next step: not recorded here yet; see the plan in the sections below
+
 ## Layout
 
 - `G:\Emulacja\quake2-miyoomini`: clone of github.com/yquake2/yquake2.
